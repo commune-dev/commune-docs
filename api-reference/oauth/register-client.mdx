@@ -1,0 +1,109 @@
+---
+title: "Register OAuth Client"
+api: "POST /oauth/clients"
+description: "Register your app with Commune to get a client_id and client_secret for the OAuth sign-in flow."
+---
+
+<Note>
+Requires a Commune API key or dashboard session. This is a one-time setup step — you register once and use the credentials for all agent sign-ins.
+</Note>
+
+<RequestExample>
+```typescript TypeScript
+const response = await fetch('https://api.commune.email/oauth/clients', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer comm_xxx',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    name: 'Your App Name',
+    websiteUrl: 'https://yourapp.com',
+    description: 'AI sales platform',
+  }),
+});
+
+const { client_id, client_secret } = await response.json();
+// Store client_secret immediately — shown only once
+```
+```python Python
+import httpx
+
+resp = httpx.post(
+    'https://api.commune.email/oauth/clients',
+    headers={
+        'Authorization': 'Bearer comm_xxx',
+        'Content-Type': 'application/json',
+    },
+    json={
+        'name': 'Your App Name',
+        'websiteUrl': 'https://yourapp.com',
+        'description': 'AI sales platform',
+    },
+)
+
+data = resp.json()
+# Store data['client_secret'] immediately — shown only once
+```
+```bash cURL
+curl -X POST https://api.commune.email/oauth/clients \
+  -H "Authorization: Bearer comm_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Your App Name",
+    "websiteUrl": "https://yourapp.com",
+    "description": "AI sales platform"
+  }'
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201
+{
+  "client_id": "comm_client_a1b2c3d4e5f6...",
+  "client_secret": "comm_secret_f6e5d4c3b2a1...",
+  "name": "Your App Name",
+  "description": "AI sales platform",
+  "website_url": "https://yourapp.com",
+  "status": "active",
+  "verified": false,
+  "created_at": "2026-03-18T10:00:00.000Z"
+}
+```
+</ResponseExample>
+
+### Body
+
+<ParamField body="name" type="string" required>
+  Your app name (2–100 characters). Shown to agents in the verification email.
+</ParamField>
+
+<ParamField body="description" type="string">
+  What your app does.
+</ParamField>
+
+<ParamField body="websiteUrl" type="string">
+  Your production domain. Commune validates sign-in requests come from this domain. Localhost is always allowed for development.
+</ParamField>
+
+<ParamField body="logoUrl" type="string">
+  URL to your app's logo.
+</ParamField>
+
+### Response
+
+<ResponseField name="client_id" type="string">
+  Public identifier for your app. Safe to expose in frontend code.
+</ResponseField>
+
+<ResponseField name="client_secret" type="string">
+  Secret key for authenticating API calls. **Shown once — store immediately.** Cannot be retrieved later.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Always `"active"` on creation.
+</ResponseField>
+
+<ResponseField name="verified" type="boolean">
+  Whether Commune has manually verified your app. Starts as `false`.
+</ResponseField>

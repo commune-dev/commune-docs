@@ -1,0 +1,122 @@
+---
+title: "List Phone Numbers"
+api: "GET /v1/phone-numbers"
+description: "List all active and released phone numbers for your organization."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const numbers = await commune.phoneNumbers.list();
+
+for (const number of numbers) {
+  console.log(number.id, number.number, number.status);
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+numbers = client.phone_numbers.list()
+
+for number in numbers:
+    print(number.id, number.number, number.status)
+```
+```bash MCP
+list_phone_numbers()
+```
+```bash cURL
+curl https://api.commune.email/v1/phone-numbers \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune phone-numbers list
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "id": "pn_01abc123",
+      "number": "+18005550001",
+      "numberType": "tollfree",
+      "friendlyName": "Support Line",
+      "country": "US",
+      "capabilities": {
+        "sms": true,
+        "mms": true,
+        "voice": true
+      },
+      "status": "active",
+      "allowList": [],
+      "blockList": ["+15555550000"],
+      "creditCostPerMonth": 150,
+      "autoReply": {
+        "enabled": true,
+        "body": "Thanks for reaching out! We'll get back to you shortly."
+      },
+      "createdAt": "2026-02-01T00:00:00.000Z",
+      "updatedAt": "2026-02-25T10:00:00.000Z"
+    }
+  ]
+}
+```
+</ResponseExample>
+
+## Response
+
+<ResponseField name="data" type="PhoneNumber[]">
+  Array of all phone numbers belonging to your organization, including released numbers. Released numbers are retained for history but cannot send or receive messages.
+
+  <Expandable title="PhoneNumber properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Unique phone number ID. Format: `pn_...`
+    </ResponseField>
+    <ResponseField name="number" type="string">
+      Phone number in E.164 format.
+    </ResponseField>
+    <ResponseField name="numberType" type="string">
+      One of: `local`, `tollfree`, `shortcode`.
+    </ResponseField>
+    <ResponseField name="friendlyName" type="string | null">
+      Display name for this number.
+    </ResponseField>
+    <ResponseField name="country" type="string">
+      ISO-3166 country code.
+    </ResponseField>
+    <ResponseField name="capabilities" type="object">
+      <Expandable title="properties">
+        <ResponseField name="sms" type="boolean">SMS enabled.</ResponseField>
+        <ResponseField name="mms" type="boolean">MMS enabled.</ResponseField>
+        <ResponseField name="voice" type="boolean">Voice enabled.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      One of: `active`, `released`, `suspended_non_payment`.
+    </ResponseField>
+    <ResponseField name="allowList" type="string[]">
+      E.164 numbers in the allow list. Empty array means all numbers allowed.
+    </ResponseField>
+    <ResponseField name="blockList" type="string[]">
+      E.164 numbers in the block list.
+    </ResponseField>
+    <ResponseField name="creditCostPerMonth" type="number">
+      Monthly credit cost (150).
+    </ResponseField>
+    <ResponseField name="autoReply" type="object | null">
+      Auto-reply configuration.
+      <Expandable title="properties">
+        <ResponseField name="enabled" type="boolean">Whether auto-reply is active.</ResponseField>
+        <ResponseField name="body" type="string">The auto-reply message text.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>

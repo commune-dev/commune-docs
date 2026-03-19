@@ -1,0 +1,149 @@
+---
+title: Prompt Injection Detection
+description: Every inbound email is scanned for prompt injection before reaching your agent.
+---
+
+Every inbound email is analyzed for prompt injection signals before delivery. The system scores content for instruction overrides, data exfiltration attempts, and social engineering patterns, then tags each message with a risk level your agent can act on.
+
+## Why this matters for agents
+
+Traditional email security focuses on spam, phishing, and malware. But AI agents that read and act on emails face additional risks:
+
+- **Instruction override** — emails that try to change the agent's system prompt or behavior
+- **Data exfiltration** — emails that attempt to trick the agent into revealing sensitive information
+- **Unauthorized actions** — emails that try to make the agent perform actions outside its intended scope
+- **Social engineering** — emails crafted to exploit the agent's tendency to be helpful
+
+## How it works
+
+Every inbound email is analyzed for prompt injection signals. The detection system evaluates content patterns, structural anomalies, and known attack vectors to assign a risk level.
+
+The results are included in both the webhook payload and message metadata:
+
+```json
+{
+  "security": {
+    "prompt_injection": {
+      "checked": true,
+      "detected": false,
+      "risk_level": "none",
+      "confidence": 0.98
+    }
+  },
+  "message": {
+    "metadata": {
+      "prompt_injection_checked": true,
+      "prompt_injection_detected": false,
+      "prompt_injection_risk": "none",
+      "prompt_injection_score": 0.02
+    }
+  }
+}
+```
+
+## Risk levels
+
+| Level | Score range | Description | Recommended action |
+|-------|------------|-------------|-------------------|
+| `none` | 0.0 – 0.1 | No injection signals detected | Process normally |
+| `low` | 0.1 – 0.3 | Minor signals, likely benign | Process with logging |
+| `medium` | 0.3 – 0.6 | Moderate signals detected | Process with caution, flag for review |
+| `high` | 0.6 – 0.8 | Strong injection indicators | Do not pass to agent's LLM directly |
+| `critical` | 0.8 – 1.0 | High-confidence injection attempt | Block, quarantine, and alert |
+
+## Handling in your agent
+
+<CodeGroup>
+
+```typescript TypeScript
+app.post('/webhook/email', (req, res) => {
+  const { message, security } = req.body;
+  const pi = security?.prompt_injection;
+
+  if (pi?.detected && pi.risk_level === 'critical') {
+    // Do not process — log and alert
+    console.error('Critical prompt injection detected', {
+      message_id: message.message_id,
+      risk: pi.risk_level,
+    });
+    return res.json({ ok: true });
+  }
+
+  if (pi?.detected && ['high', 'medium'].includes(pi.risk_level)) {
+    // Process with safeguards — don't pass raw content to LLM
+    const sanitizedContent = sanitizeForAgent(message.content);
+    processEmail({ ...message, content: sanitizedContent });
+    return res.json({ ok: true });
+  }
+
+  // Normal processing
+  processEmail(message);
+  res.json({ ok: true });
+});
+```
+
+```python Python
+@app.route("/webhook/email", methods=["POST"])
+def handle_email():
+    data = request.json
+    pi = data.get("security", {}).get("prompt_injection", {})
+
+    if pi.get("detected") and pi.get("risk_level") == "critical":
+        logger.error("Critical PI detected", extra={"msg": data["message"]["message_id"]})
+        return {"ok": True}
+
+    if pi.get("detected") and pi.get("risk_level") in ("high", "medium"):
+        # Sanitize before passing to LLM
+        sanitized = sanitize_content(data["message"]["content"])
+        process_email_safely(sanitized)
+        return {"ok": True}
+
+    process_email(data["message"])
+    return {"ok": True}
+```
+
+</CodeGroup>
+
+## Best practices for agent developers
+
+1. **Always check the risk level** — even `low` risk signals should be logged for monitoring
+2. **Don't pass raw email content to your LLM** when risk is `medium` or higher
+3. **Use extracted data instead** — structured extraction runs separately and produces cleaner inputs
+4. **Set up alerts** for `high` and `critical` detections so you can review them
+5. **Implement content sanitization** for medium-risk emails you still want to process
+6. **Rate-limit actions** — even if content passes detection, limit what your agent can do per email
+7. **Log everything** — maintain an audit trail of how emails were classified and processed
+
+## Detection scope
+
+The detection system analyzes:
+- Email body content (both HTML and plain text)
+- Subject lines
+- Attachment filenames
+- Hidden or encoded content within HTML
+
+<Note>
+  Prompt injection detection is available on all plans. The detection system is continuously updated to address new attack patterns.
+</Note>
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  See the full security context available in every webhook payload.
+</Card>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Use structured extraction to produce safer inputs for your agent's LLM.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-halved" href="/security/spam-prevention">
+  Inbound spam scoring and outbound content validation.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full picture of all Commune security layers.
+</Card>
+
+</Columns>

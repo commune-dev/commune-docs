@@ -1,0 +1,151 @@
+---
+title: "Errors"
+description: "Commune uses standard HTTP status codes and a consistent error object shape across all endpoints."
+---
+
+## Error response format
+
+All errors return a JSON body with an `error` code and a human-readable `message`:
+
+```json
+{
+  "error": "validation_error",
+  "message": "The 'to' field is required and must be a valid email address."
+}
+```
+
+Use the `error` field for programmatic handling. Use `message` for logging and debugging — it is not guaranteed to be stable across releases.
+
+## Error codes
+
+| HTTP Status | Error code | When it occurs |
+| --- | --- | --- |
+| `400` | `validation_error` | Request body or query params failed validation. Check `message` for the specific field. |
+| `401` | `unauthorized` | Missing or invalid `Authorization` header, or the API key has been revoked. |
+| `402` | `insufficient_credits` | The operation requires SMS/voice credits and your balance is too low. |
+| `403` | `forbidden` | Valid credentials, but the key lacks permission for this operation. |
+| `403` | `plan_upgrade_required` | The endpoint or feature is not available on your current plan. |
+| `404` | `not_found` | The requested resource does not exist or does not belong to your organization. |
+| `429` | `rate_limit_exceeded` | You have exceeded an API rate limit. See `Retry-After` header. |
+| `500` | `internal_error` | An unexpected server-side error. These are monitored and investigated automatically. |
+
+## Handling errors in TypeScript
+
+<CodeGroup>
+
+```typescript TypeScript
+import Commune from 'commune-ai';
+
+const client = new Commune({ apiKey: process.env.COMMUNE_API_KEY });
+
+try {
+  const result = await client.messages.send({
+    from: 'agent@yourdomain.com',
+    to: 'user@example.com',
+    subject: 'Hello',
+    text: 'This is a test message.',
+  });
+  console.log('Sent:', result.data.id);
+} catch (err: any) {
+  switch (err.error) {
+    case 'validation_error':
+      console.error('Bad request:', err.message);
+      break;
+    case 'unauthorized':
+      console.error('Check your COMMUNE_API_KEY');
+      break;
+    case 'insufficient_credits':
+      console.error('Top up your SMS credits at https://commune.email/dashboard/billing');
+      break;
+    case 'plan_upgrade_required':
+      console.error('This feature requires a higher plan');
+      break;
+    case 'rate_limit_exceeded':
+      const retryAfter = err.retryAfter ?? 60;
+      console.warn(`Rate limited. Retry in ${retryAfter}s`);
+      break;
+    default:
+      console.error('Unexpected error:', err);
+  }
+}
+```
+
+```python Python
+from commune import Commune, CommuneError
+import os
+import time
+
+client = Commune(api_key=os.environ["COMMUNE_API_KEY"])
+
+try:
+    result = client.messages.send(
+        from_="agent@yourdomain.com",
+        to="user@example.com",
+        subject="Hello",
+        text="This is a test message.",
+    )
+    print("Sent:", result.data.id)
+except CommuneError as err:
+    if err.error == "validation_error":
+        print("Bad request:", err.message)
+    elif err.error == "unauthorized":
+        print("Check your COMMUNE_API_KEY")
+    elif err.error == "insufficient_credits":
+        print("Top up your SMS credits at https://commune.email/dashboard/billing")
+    elif err.error == "plan_upgrade_required":
+        print("This feature requires a higher plan")
+    elif err.error == "rate_limit_exceeded":
+        retry_after = getattr(err, "retry_after", 60)
+        print(f"Rate limited. Retry in {retry_after}s")
+        time.sleep(retry_after)
+    else:
+        raise
+```
+
+</CodeGroup>
+
+## Retrying on 429 and 5xx
+
+**429 Too Many Requests** — the response includes a `Retry-After` header (in seconds) and a `retryAfter` field in the JSON body. Wait at least that long before retrying.
+
+**500 Internal Error** — these are transient. Use exponential backoff with jitter: wait 1s, then 2s, then 4s, up to a reasonable cap. Do not retry indefinitely.
+
+Example exponential backoff in TypeScript:
+
+```typescript
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 4,
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const isRetryable =
+        err.status === 429 || (err.status >= 500 && err.status < 600);
+
+      if (!isRetryable || attempt === maxAttempts) throw err;
+
+      const retryAfter =
+        err.error === 'rate_limit_exceeded' && err.retryAfter
+          ? err.retryAfter * 1000
+          : Math.min(1000 * 2 ** (attempt - 1), 30_000);
+
+      // Add jitter to avoid thundering herd
+      const jitter = Math.random() * 500;
+      await new Promise((resolve) => setTimeout(resolve, retryAfter + jitter));
+    }
+  }
+  throw new Error('Unreachable');
+}
+```
+
+## Idempotency
+
+The `/v1/messages/send` and `/v1/sms/send` endpoints are **not automatically idempotent**. If you retry a send operation, you may deliver the message twice. To avoid duplicate sends:
+
+- Track delivery state on your side before retrying
+- Only retry on 5xx errors, not on 429s for sends — instead, queue and respect the `Retry-After` window
+- For transactional sends, use a unique identifier in your request body that you check before resending
+
+[Next: Rate limits →](/api-reference/rate-limits)

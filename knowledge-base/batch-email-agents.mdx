@@ -1,0 +1,299 @@
+---
+title: How do I send emails in bulk from an agent?
+description: Use a controlled send loop with rate limiting and delay between sends. Never blast all emails simultaneously — spread sends over time to protect deliverability.
+---
+
+## The short answer
+
+Queue your list, send with a delay between each message, and respect your plan's rate limits. Never fire all emails simultaneously — even a few hundred emails sent in seconds looks like a spam campaign to ISPs. Spread sends over time: a 100ms delay between sends caps you at 10 emails per second, which is safe even during warmup.
+
+## Why blasting fails
+
+Sending your entire list at once creates a sudden volume spike. ISPs monitor for exactly this pattern — not just content, but volumetric anomalies. SPF, DKIM, and DMARC records don't protect you here.
+
+A new domain sending 500 emails in 30 seconds will land in spam regardless of how clean the content is. The volume shape is the signal. ISPs compare your current send rate against your domain's historical average. A spike that deviates sharply from that baseline triggers bulk filtering, and once filtered, the whole batch is affected — not just the excess.
+
+The fix is simple: slow down.
+
+## The right pattern: controlled loop
+
+Iterate over your recipient list and insert a delay between each send. 100ms per send = 10 emails per second, which is appropriate for warmed domains and conservative enough for new ones.
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from '@commune-email/sdk';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function sendBatch(recipients: string[], inboxId: string, domainId: string) {
+  let sent = 0;
+  let failed = 0;
+
+  for (const recipient of recipients) {
+    try {
+      await commune.messages.send({
+        inboxId,
+        domainId,
+        to: recipient,
+        subject: 'Your subject here',
+        body: `Hi, this message is for ${recipient}`,
+      });
+
+      sent++;
+      console.log(`[${sent + failed}/${recipients.length}] Sent to ${recipient}`);
+    } catch (err) {
+      failed++;
+      console.error(`Failed to send to ${recipient}:`, err);
+    }
+
+    // 100ms delay = 10 emails/second, safe for warmup
+    await sleep(100);
+  }
+
+  console.log(`Done. Sent: ${sent}, Failed: ${failed}`);
+}
+```
+
+```python Python
+import asyncio
+from commune_email import CommuneClient
+
+client = CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+
+async def send_batch(recipients: list[str], inbox_id: str, domain_id: str):
+    sent = 0
+    failed = 0
+
+    for recipient in recipients:
+        try:
+            await client.messages.send(
+                inbox_id=inbox_id,
+                domain_id=domain_id,
+                to=recipient,
+                subject="Your subject here",
+                body=f"Hi, this message is for {recipient}",
+            )
+            sent += 1
+            print(f"[{sent + failed}/{len(recipients)}] Sent to {recipient}")
+        except Exception as err:
+            failed += 1
+            print(f"Failed to send to {recipient}: {err}")
+
+        # 100ms delay = 10 emails/second, safe for warmup
+        await asyncio.sleep(0.1)
+
+    print(f"Done. Sent: {sent}, Failed: {failed}")
+```
+
+</CodeGroup>
+
+## Respect warmup limits
+
+During the first 14 days, every inbox has a daily send cap that increases incrementally each day. Sending over this cap doesn't just bounce — it can damage the domain's reputation score and slow down the warmup curve.
+
+Check `inbox.health.currentDailyLimit` before starting your batch, then stop the loop when you've reached it. Queue the remainder for the next day.
+
+<CodeGroup>
+
+```typescript TypeScript
+async function sendWithinDailyLimit(
+  recipients: string[],
+  inboxId: string,
+  domainId: string,
+) {
+  const inbox = await commune.inboxes.get({ inboxId, domainId });
+  const dailyLimit = inbox.health?.currentDailyLimit ?? Infinity;
+
+  console.log(`Daily limit: ${dailyLimit}`);
+
+  const toSend = recipients.slice(0, dailyLimit);
+  const remainder = recipients.slice(dailyLimit);
+
+  if (remainder.length > 0) {
+    console.log(`${remainder.length} recipients queued for tomorrow.`);
+    // Persist remainder to your DB or queue for next run
+  }
+
+  await sendBatch(toSend, inboxId, domainId);
+}
+```
+
+```python Python
+async def send_within_daily_limit(
+    recipients: list[str],
+    inbox_id: str,
+    domain_id: str,
+):
+    inbox = await client.inboxes.get(inbox_id=inbox_id, domain_id=domain_id)
+    daily_limit = inbox.health.current_daily_limit if inbox.health else float("inf")
+
+    print(f"Daily limit: {daily_limit}")
+
+    to_send = recipients[:daily_limit]
+    remainder = recipients[daily_limit:]
+
+    if remainder:
+        print(f"{len(remainder)} recipients queued for tomorrow.")
+        # Persist remainder to your DB or queue for next run
+
+    await send_batch(to_send, inbox_id, domain_id)
+```
+
+</CodeGroup>
+
+## Handle errors in the loop
+
+Never let one failed send abort the entire batch. Wrap each send in a try/catch, log the failure, and continue. For `429` rate limit responses, back off and retry before moving on.
+
+<CodeGroup>
+
+```typescript TypeScript
+async function sendWithRetry(
+  recipient: string,
+  inboxId: string,
+  domainId: string,
+  maxRetries = 3,
+) {
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      await commune.messages.send({
+        inboxId,
+        domainId,
+        to: recipient,
+        subject: 'Your subject here',
+        body: `Hi, this message is for ${recipient}`,
+      });
+      return; // success
+    } catch (err: any) {
+      if (err?.status === 429) {
+        const backoff = 1000 * 2 ** attempt; // 1s, 2s, 4s
+        console.warn(`Rate limited. Retrying ${recipient} in ${backoff}ms...`);
+        await sleep(backoff);
+        attempt++;
+      } else {
+        console.error(`Non-retryable error for ${recipient}:`, err);
+        return; // don't retry on non-429 errors
+      }
+    }
+  }
+
+  console.error(`Gave up on ${recipient} after ${maxRetries} attempts`);
+}
+```
+
+```python Python
+async def send_with_retry(
+    recipient: str,
+    inbox_id: str,
+    domain_id: str,
+    max_retries: int = 3,
+):
+    attempt = 0
+
+    while attempt < max_retries:
+        try:
+            await client.messages.send(
+                inbox_id=inbox_id,
+                domain_id=domain_id,
+                to=recipient,
+                subject="Your subject here",
+                body=f"Hi, this message is for {recipient}",
+            )
+            return  # success
+        except Exception as err:
+            if getattr(err, "status", None) == 429:
+                backoff = 1.0 * (2 ** attempt)  # 1s, 2s, 4s
+                print(f"Rate limited. Retrying {recipient} in {backoff}s...")
+                await asyncio.sleep(backoff)
+                attempt += 1
+            else:
+                print(f"Non-retryable error for {recipient}: {err}")
+                return  # don't retry
+
+    print(f"Gave up on {recipient} after {max_retries} attempts")
+```
+
+</CodeGroup>
+
+## Tracking progress
+
+Maintain a simple sent/failed count across the loop. For long-running batches, persist state to your database so you can resume after interruptions without re-sending to recipients who already received the email.
+
+```typescript
+type BatchResult = {
+  sent: string[];
+  failed: { recipient: string; error: string }[];
+};
+
+async function sendBatchWithTracking(
+  recipients: string[],
+  inboxId: string,
+  domainId: string,
+): Promise<BatchResult> {
+  const result: BatchResult = { sent: [], failed: [] };
+
+  for (const recipient of recipients) {
+    try {
+      await sendWithRetry(recipient, inboxId, domainId);
+      result.sent.push(recipient);
+    } catch (err: any) {
+      result.failed.push({ recipient, error: err?.message ?? String(err) });
+    }
+
+    await sleep(100);
+  }
+
+  console.log(`Batch complete — ${result.sent.length} sent, ${result.failed.length} failed`);
+  // Persist result to DB here if needed
+
+  return result;
+}
+```
+
+## Segmenting large lists
+
+If your recipient list exceeds your inbox's daily limit, split it into daily segments and schedule each segment for the next available day. Never exceed the daily cap in a single run.
+
+```typescript
+function segmentByDailyLimit(recipients: string[], dailyLimit: number): string[][] {
+  const segments: string[][] = [];
+
+  for (let i = 0; i < recipients.length; i += dailyLimit) {
+    segments.push(recipients.slice(i, i + dailyLimit));
+  }
+
+  return segments;
+}
+
+// Example: 1,200 recipients, 300/day limit → 4 segments
+const segments = segmentByDailyLimit(allRecipients, dailyLimit);
+
+// Day 0: run segments[0]
+// Day 1: run segments[1]
+// ...
+```
+
+Schedule each segment using a cron job or task queue (e.g. BullMQ, Inngest, or a simple DB-backed scheduler). Each day's run fetches the current `currentDailyLimit` before sending, since the limit increases during warmup.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="How do I warm up a new domain?" icon="book-open" href="/kb/how-to-warm-up-domain">
+  Warmup ramp schedule and strategy for safely building domain reputation before scale.
+</Card>
+
+<Card title="What happens if an agent sends too many emails?" icon="book-open" href="/kb/what-happens-if-agent-sends-too-many-emails">
+  How 429 rate limit responses work and how to implement exponential backoff.
+</Card>
+
+<Card title="Agent Email at Scale" icon="newspaper" href="/blog/agent-email-at-scale">
+  Architecture patterns for running high-volume agent email sends reliably.
+</Card>
+
+</Columns>

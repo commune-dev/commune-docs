@@ -1,0 +1,200 @@
+---
+title: SMS Quickstart
+description: Go from sign-up to your agent sending its first SMS in under 5 minutes.
+---
+
+## Overview
+
+- Buy a phone number from the dashboard (toll-free or local US number)
+- Create an API key scoped for SMS
+- Call `POST /v1/sms/send` — your agent sends its first SMS
+- Read replies via `GET /v1/sms/conversations`
+
+<Steps>
+
+<Step title="Sign up and get credits">
+
+Go to [commune.email](https://commune.email) → sign up → you start with credits included in your plan.
+
+SMS costs 1 credit per segment (160 chars). Check your balance: **Dashboard → Phone Numbers → Settings**.
+
+</Step>
+
+<Step title="Buy a phone number">
+
+**Dashboard → Phone Numbers → Buy Number**
+
+- **Toll-free** (`+1 800/888/866/...`): good for high-volume agent messaging, no A2P registration required for basic use
+- **Local** (`+1 + area code`): better delivery for personal-style outreach
+
+Select a number, optionally add a label, click **Buy**. The number is active immediately.
+
+Cost: 150 credits/month, charged at your billing cycle.
+
+</Step>
+
+<Step title="Create an API key">
+
+**Dashboard → API Keys → Create API Key**
+
+Give it a name (e.g. `sms-agent`), select scopes `read` + `write`. Copy the key — it starts with `comm_`.
+
+</Step>
+
+<Step title="Send your first SMS">
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/sms/send \
+  -H "Authorization: Bearer comm_YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number_id": "YOUR_PHONE_NUMBER_ID",
+    "to": "+14155551234",
+    "body": "Hello from my agent!"
+  }'
+```
+
+```typescript TypeScript
+const res = await fetch('https://api.commune.email/v1/sms/send', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer comm_YOUR_KEY',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    phone_number_id: 'YOUR_PHONE_NUMBER_ID',
+    to: '+14155551234',
+    body: 'Hello from my agent!',
+  }),
+});
+const { data } = await res.json();
+console.log(data.message_id, data.thread_id);
+```
+
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "data": {
+    "message_id": "sms_SMabc123def456",
+    "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+    "status": "accepted",
+    "credits_charged": 2
+  }
+}
+```
+
+Find your `phone_number_id` from: **Dashboard → Phone Numbers** (copy the ID shown on hover), or:
+
+```bash
+curl https://api.commune.email/v1/phone-numbers \
+  -H "Authorization: Bearer comm_YOUR_KEY"
+```
+
+</Step>
+
+<Step title="Read replies">
+
+When someone replies, their message appears in the conversation thread. Poll or build a webhook handler:
+
+```bash
+# List all conversations for a number
+curl "https://api.commune.email/v1/sms/conversations?phone_number_id=YOUR_PHONE_NUMBER_ID" \
+  -H "Authorization: Bearer comm_YOUR_KEY"
+
+# Get messages in a specific conversation
+curl "https://api.commune.email/v1/sms/conversations/%2B14155551234?phone_number_id=YOUR_PHONE_NUMBER_ID" \
+  -H "Authorization: Bearer comm_YOUR_KEY"
+```
+
+The `remote_number` in the URL must be URI-encoded (e.g. `+14155551234` → `%2B14155551234`).
+
+</Step>
+
+<Step title="Agent integration pattern">
+
+```typescript
+import OpenAI from 'openai';
+
+const openai = new OpenAI();
+const COMMUNE_KEY = process.env.COMMUNE_API_KEY;
+const PHONE_NUMBER_ID = process.env.COMMUNE_PHONE_NUMBER_ID;
+
+// Poll for new inbound messages and respond
+async function processReplies() {
+  const res = await fetch(
+    `https://api.commune.email/v1/sms/conversations?phone_number_id=${PHONE_NUMBER_ID}`,
+    { headers: { Authorization: `Bearer ${COMMUNE_KEY}` } }
+  );
+  const { data: conversations } = await res.json();
+
+  for (const conv of conversations) {
+    // Get latest messages
+    const encoded = encodeURIComponent(conv.remote_number);
+    const msgRes = await fetch(
+      `https://api.commune.email/v1/sms/conversations/${encoded}?phone_number_id=${PHONE_NUMBER_ID}`,
+      { headers: { Authorization: `Bearer ${COMMUNE_KEY}` } }
+    );
+    const { data: messages } = await msgRes.json();
+
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.direction !== 'inbound') continue; // skip if already replied
+
+    // Generate reply with your LLM
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'user', content: lastMsg.content },
+      ],
+    });
+
+    const reply = completion.choices[0].message.content;
+
+    // Send the reply
+    await fetch('https://api.commune.email/v1/sms/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${COMMUNE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        phone_number_id: PHONE_NUMBER_ID,
+        to: conv.remote_number,
+        body: reply,
+        thread_id: conv.thread_id, // keeps conversation threaded
+      }),
+    });
+  }
+}
+```
+
+</Step>
+
+</Steps>
+
+## Next steps
+
+<Columns cols={2}>
+
+<Card title="Phone Numbers & SMS" icon="phone" href="/features/phone-numbers-sms">
+  Full API reference — send, MMS, credits, limits.
+</Card>
+
+<Card title="API Keys" icon="key" href="/authentication">
+  Scope your keys to specific capabilities.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Default SMS limits and how to adjust them.
+</Card>
+
+<Card title="Email Quickstart" icon="envelope" href="/quickstart">
+  Add email alongside SMS for multi-channel agents.
+</Card>
+
+</Columns>

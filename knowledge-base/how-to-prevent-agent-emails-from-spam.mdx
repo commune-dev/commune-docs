@@ -1,0 +1,106 @@
+---
+title: How do I prevent my agent's emails from landing in spam?
+description: DKIM/SPF/DMARC, domain warmup, bounce rates, complaint rates — what matters and how Commune handles it automatically.
+---
+
+## The short answer
+
+There are two categories of deliverability problems. Authentication failures (fixable in one day). And reputation problems (takes weeks to build, minutes to destroy).
+
+Commune handles authentication automatically. Reputation is determined by your sending behavior.
+
+## Category 1: Authentication failures
+
+Inbox providers check three DNS records before delivering email:
+
+| Record | What it proves | Commune status |
+|--------|----------------|----------------|
+| **DKIM** | This email was signed by the domain owner | Auto-configured |
+| **SPF** | This server is authorized to send for this domain | Auto-configured |
+| **DMARC** | What to do if DKIM/SPF fail | Auto-configured |
+
+When you add a custom domain to Commune, all three are configured automatically. You add the DNS records, Commune verifies them, and all outbound email is DKIM-signed from that point forward.
+
+If you're using the shared `commune.email` domain, these are already set up.
+
+## Category 2: Reputation signals
+
+Authentication tells providers the email is legitimate. Reputation tells them whether recipients want it.
+
+Inbox providers look at:
+
+| Signal | Danger threshold |
+|--------|-----------------|
+| Bounce rate | > 5% |
+| Spam complaint rate | > 0.1% |
+| Low engagement rate | < 20% open rate consistently |
+| Volume spikes | > 3x your normal daily volume |
+
+**Bounce rate** is the percentage of emails that couldn't be delivered. High bounce rate means you're sending to bad addresses. Above 5%, Gmail and Outlook start filtering to spam.
+
+**Complaint rate** is the percentage of recipients who click "report spam". Above 0.1% (1 in 1000) is dangerous. Above 0.3% can get your domain blocked.
+
+## Domain warmup
+
+New domains have no reputation. Start sending 500 emails/day from a fresh domain and every one goes to spam.
+
+Warmup is the process of gradually establishing trust:
+
+| Day range | Daily send limit |
+|-----------|-----------------|
+| Days 1-3 | 50 |
+| Days 4-7 | 200 |
+| Days 8-11 | 1,000 |
+| Days 12-14 | 5,000 |
+| Day 15+ | Full volume |
+
+**Commune handles warmup automatically.** When you create a new inbox on a new domain, the warmup schedule starts immediately. You don't configure it. If you try to send more than the current warmup limit, Commune queues the excess.
+
+## What Commune monitors automatically
+
+- Bounce and complaint rates per inbox (via Resend webhooks)
+- Automatic suppression list (bounced addresses never receive again)
+- Sending health gate: if bounce rate exceeds 5% or complaint rate exceeds 0.1%, sending is automatically paused
+
+## Check your inbox health
+
+```bash
+curl https://api.commune.email/v1/inboxes/INBOX_ID \
+  -H "Authorization: Bearer comm_..."
+```
+
+Response includes:
+
+```json
+{
+  "data": {
+    "health": {
+      "bounceRate": 0.012,
+      "complaintRate": 0.0004,
+      "status": "healthy"
+    }
+  }
+}
+```
+
+Status values: `healthy`, `warning` (approaching thresholds), `paused` (thresholds exceeded, sending stopped).
+
+## The AI email fingerprint problem
+
+LLMs produce similar patterns. "Hope this finds you well", consistent structure, similar word frequency. Inbox providers are detecting these patterns.
+
+The fix: emails need to be genuinely wanted by recipients. Personalization helps. But the most important signal is whether people actually open and engage — that only happens if you're sending to people who opted in or have a reason to want the email.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track bounce rates, complaint rates, and inbox health metrics across all your agent inboxes.
+</Card>
+
+<Card title="Why Agent Emails Land in Spam" icon="newspaper" href="/blog/why-agent-emails-land-in-spam">
+  Detailed technical deep-dive into deliverability signals and how to fix them.
+</Card>
+
+</Columns>

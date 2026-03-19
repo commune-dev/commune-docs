@@ -1,0 +1,121 @@
+---
+title: "Get domain"
+api: "GET /v1/domains/:domainId"
+description: "Retrieve details for a single domain including DNS records and verification status."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const domain = await commune.domains.get('domain_xyz789');
+
+console.log(domain.data.status);   // verified
+console.log(domain.data.records);  // DNS records
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+domain = client.domains.get("domain_xyz789")
+
+print(domain.data.status)
+```
+```bash MCP
+get_domain(id="domain_xyz789")
+```
+```bash cURL
+curl "https://api.commune.email/v1/domains/domain_xyz789" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune domains get domain_xyz789
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "id": "domain_xyz789",
+    "name": "mycompany.com",
+    "status": "verified",
+    "region": "us-east-1",
+    "records": [
+      {
+        "type": "MX",
+        "name": "mycompany.com",
+        "value": "feedback-smtp.us-east-1.amazonses.com",
+        "priority": 10,
+        "ttl": 300,
+        "status": "verified"
+      },
+      {
+        "type": "TXT",
+        "name": "resend._domainkey.mycompany.com",
+        "value": "p=MIGfMA0GCSq...",
+        "ttl": 300,
+        "status": "verified"
+      }
+    ],
+    "createdAt": "2026-02-01T08:00:00.000Z"
+  }
+}
+```
+```json 404 Not Found
+{
+  "error": "Domain not found"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="domainId" type="string" required>
+  The domain ID to retrieve. Obtain this from [List domains](/api-reference/domains/list) or [Create domain](/api-reference/domains/create).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Unique domain identifier.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      The registered domain name.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Verification status. `"pending"` or `"verified"`. Only verified domains can send and receive email.
+    </ResponseField>
+    <ResponseField name="region" type="string">
+      AWS region for this domain's sending infrastructure.
+    </ResponseField>
+    <ResponseField name="records" type="object[]">
+      DNS records required for domain verification.
+
+      <Expandable title="Record properties">
+        <ResponseField name="type" type="string">DNS record type (e.g. `MX`, `TXT`, `CNAME`).</ResponseField>
+        <ResponseField name="name" type="string">DNS record name/host to set at your registrar.</ResponseField>
+        <ResponseField name="value" type="string">DNS record value to set.</ResponseField>
+        <ResponseField name="priority" type="number">MX record priority. Only present for MX records.</ResponseField>
+        <ResponseField name="ttl" type="number">Recommended TTL in seconds.</ResponseField>
+        <ResponseField name="status" type="string">
+          Verification status for this record. One of: `not_started`, `pending`, `verified`, `failed`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 creation timestamp.
+    </ResponseField>
+  </Expandable>
+</ResponseField>

@@ -1,0 +1,161 @@
+---
+title: How do I extract structured data from inbound emails?
+description: Configure a JSON schema on an inbox to automatically extract structured fields from every inbound email using LLM extraction.
+---
+
+## How it works
+
+Attach a JSON schema to an inbox. Every inbound email is automatically processed by an LLM that extracts the fields you defined. The extracted data arrives in your webhook payload alongside the raw email.
+
+No parsing code required. No regex. No custom prompt engineering.
+
+## Step 1: Configure an extraction schema
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.setExtractionSchema({
+  domainId: 'DOMAIN_ID',
+  inboxId: 'INBOX_ID',
+  schema: {
+    name: 'support_ticket',
+    description: 'Extract support ticket details from customer emails',
+    enabled: true,
+    schema: {
+      type: 'object',
+      properties: {
+        order_number: {
+          type: 'string',
+          description: 'Order or reference number mentioned in the email',
+        },
+        intent: {
+          type: 'string',
+          enum: ['billing', 'technical', 'general', 'complaint', 'cancellation'],
+          description: 'Primary intent of the customer email',
+        },
+        urgency: {
+          type: 'string',
+          enum: ['low', 'medium', 'high'],
+          description: 'How urgent the request appears',
+        },
+        summary: {
+          type: 'string',
+          description: 'One-sentence summary of the customer request',
+        },
+      },
+    },
+  },
+});
+```
+
+```python Python
+client.inboxes.set_extraction_schema(
+    domain_id="DOMAIN_ID",
+    inbox_id="INBOX_ID",
+    name="support_ticket",
+    description="Extract support ticket details from customer emails",
+    enabled=True,
+    schema={
+        "type": "object",
+        "properties": {
+            "order_number": {"type": "string"},
+            "intent": {
+                "type": "string",
+                "enum": ["billing", "technical", "general", "complaint", "cancellation"],
+            },
+            "urgency": {"type": "string", "enum": ["low", "medium", "high"]},
+            "summary": {"type": "string"},
+        },
+    },
+)
+```
+
+```bash cURL
+curl -X PUT https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID/extraction-schema \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "support_ticket",
+    "enabled": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "order_number": { "type": "string" },
+        "intent": { "type": "string", "enum": ["billing", "technical", "general"] },
+        "urgency": { "type": "string", "enum": ["low", "medium", "high"] },
+        "summary": { "type": "string" }
+      }
+    }
+  }'
+```
+
+</CodeGroup>
+
+## Step 2: Use the extracted data in your webhook
+
+When an email arrives, the webhook payload includes an `extractedData` field:
+
+```json
+{
+  "message": { ... },
+  "extractedData": {
+    "order_number": "ORD-12345",
+    "intent": "billing",
+    "urgency": "high",
+    "summary": "Customer received an incorrect charge on their last invoice"
+  }
+}
+```
+
+Use it directly in your agent logic:
+
+```typescript
+app.post('/webhook/email', async (req, res) => {
+  const { message, extractedData } = req.body;
+
+  const { intent, urgency, order_number, summary } = extractedData ?? {};
+
+  // Route based on extracted intent
+  if (intent === 'cancellation') {
+    await churnAgent.handle({ message, extractedData });
+  } else if (urgency === 'high') {
+    await escalateToBillingTeam({ order_number, summary, message });
+  } else {
+    await supportAgent.respond({ message, extractedData });
+  }
+
+  res.json({ ok: true });
+});
+```
+
+## Schema design tips
+
+**Write specific descriptions.** The LLM uses your field descriptions when extracting. `"Order or reference number mentioned in the email"` is better than `"order number"`.
+
+**Use enums for categorical fields.** Enums constrain the output to valid values. `["billing", "technical", "general"]` ensures you always get one of those three strings.
+
+**Keep schemas focused.** Extract what you need for routing and processing. Don't try to extract everything — the LLM is more accurate on targeted schemas.
+
+**Test with edge cases.** Send test emails that don't contain the fields you're extracting. The extractor returns `null` for missing fields, not an error.
+
+## What happens if extraction fails
+
+If the LLM extraction fails for any reason, the webhook is still delivered. The `extractedData` field will be `null` or missing. Your webhook handler should treat `extractedData` as optional.
+
+```typescript
+const intent = extractedData?.intent ?? 'general'; // safe fallback
+```
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Full reference for configuring JSON schemas and using extracted data in your agent.
+</Card>
+
+<Card title="Support Agent Example" icon="flask" href="/examples/support-agent">
+  Complete agent implementation using structured extraction for intent-based routing.
+</Card>
+
+</Columns>

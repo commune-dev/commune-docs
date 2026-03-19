@@ -1,0 +1,78 @@
+---
+title: Do AI agents need their own email infrastructure?
+description: Why shared ESP accounts break for autonomous agents and what agent-native email provides.
+---
+
+## The short answer
+
+Yes. Calling a generic email API from a shared account is not the same as having email infrastructure. The difference becomes clear when you need replies, reputation isolation, reply routing, or scale.
+
+## What breaks with shared email infrastructure
+
+**Calling `resend.emails.send()` or `sendgrid.send()` from your agent gives you one thing: outbound delivery.**
+
+It does not give you:
+
+| What you need | What shared ESPs give you |
+|---------------|--------------------------|
+| An inbox that receives replies | ✗ No |
+| Reply routing back to your agent | ✗ No |
+| Per-agent sender reputation | ✗ Shared reputation for all sends |
+| Automatic thread resolution | ✗ No |
+| Programmatic inbox creation | ✗ No (dashboard only) |
+| Warmup per agent/campaign | ✗ Manual, one domain |
+| Bounce/complaint rates per agent | ✗ Account-wide only |
+
+## Why replies matter
+
+Email is a conversation. Your agent sends an outreach email. The prospect replies. That reply needs to go somewhere.
+
+With a shared ESP, that reply either:
+- Goes to a mailbox no one checks
+- Goes to a human inbox the agent can't read
+- Gets lost
+
+With Commune, the reply is delivered to your webhook with the full parsed email, threaded correctly to the original send.
+
+## Why reputation isolation matters
+
+If your agent sends to a bad list, your complaint rate spikes. With shared infrastructure, that spike affects every sender using the same account.
+
+With per-agent inboxes, one bad campaign doesn't poison your other agents' sending.
+
+## Why programmatic creation matters
+
+Your agent can't open a browser, navigate a dashboard, fill out a form, and create an inbox. It needs to call an API.
+
+```typescript
+// This is what agent-native email looks like
+const inbox = await commune.inboxes.create({ localPart: 'outreach-q1' });
+// → outreach-q1@commune.email, ready immediately
+```
+
+## What "agent-native" email infrastructure means
+
+1. **Programmatic inbox creation** — one API call, no dashboard
+2. **Send + receive** — not just outbound
+3. **Automatic threading** — replies resolve to the correct conversation
+4. **Per-inbox reputation** — isolation between agents and campaigns
+5. **API-accessible metrics** — bounce rate, complaint rate, suppression list
+6. **Automatic warmup** — domain reputation built gradually
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="How do I give my AI agent an email address?" icon="inbox" href="/kb/how-do-i-give-my-agent-an-email-address">
+  Create an agent inbox with one API call — no domain setup required.
+</Card>
+
+<Card title="How do I handle email replies in my agent?" icon="bolt" href="/kb/how-to-handle-email-replies">
+  Configure webhooks to receive inbound emails and route replies back to your agent.
+</Card>
+
+<Card title="How do I set up per-agent inboxes?" icon="inbox" href="/kb/per-agent-inboxes-multi-agent">
+  Create isolated inboxes per agent or campaign for reputation and reply routing.
+</Card>
+
+</Columns>

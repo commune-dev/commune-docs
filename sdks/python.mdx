@@ -1,0 +1,320 @@
+---
+title: Python SDK
+description: Official Python SDK for Commune — sync and async clients.
+---
+
+## Installation
+
+```bash
+pip install commune-mail
+```
+
+Requires Python 3.9+. Uses `httpx` for HTTP and `pydantic` for type validation.
+
+## Initialization
+
+```python
+from commune import CommuneClient
+
+client = CommuneClient(api_key="comm_...")
+
+# Or read from COMMUNE_API_KEY environment variable
+client = CommuneClient()
+
+# With options
+client = CommuneClient(
+    api_key="comm_...",
+    base_url="https://api.commune.email",  # Optional
+    timeout=30.0,                           # Optional, seconds
+)
+```
+
+### Async client
+
+```python
+from commune import AsyncCommuneClient
+
+client = AsyncCommuneClient(api_key="comm_...")
+
+inbox = await client.inboxes.create(local_part="support")
+```
+
+### Context manager
+
+```python
+with CommuneClient(api_key="comm_...") as client:
+    inboxes = client.inboxes.list()
+```
+
+## Available methods
+
+### `client.messages`
+
+| Method | Description |
+|--------|-------------|
+| `send(to, subject, html?, text?, ...)` | Send an email |
+| `list(inbox_id?, domain_id?, sender?, ...)` | List messages with filters |
+
+```python
+result = client.messages.send(
+    to="user@example.com",
+    subject="Hello",
+    html="<p>Hi there!</p>",
+    text="Hi there!",
+    cc=["manager@example.com"],
+    thread_id="thread_abc",       # Reply in existing thread
+    inbox_id="inbox_xyz",         # Send from specific inbox
+    attachments=["attachment_id"], # From client.attachments.upload()
+)
+
+messages = client.messages.list(inbox_id="inbox_xyz", limit=20)
+```
+
+### `client.inboxes`
+
+| Method | Description |
+|--------|-------------|
+| `list(domain_id?)` | List inboxes (all or per domain) |
+| `create(local_part, domain_id?, name?, webhook?)` | Create an inbox |
+| `get(domain_id, inbox_id)` | Get inbox details |
+| `update(domain_id, inbox_id, ...)` | Update an inbox |
+| `remove(domain_id, inbox_id)` | Delete an inbox |
+| `set_webhook(domain_id, inbox_id, endpoint, events?)` | Set webhook |
+| `set_extraction_schema(domain_id, inbox_id, ...)` | Set structured extraction schema |
+| `remove_extraction_schema(domain_id, inbox_id)` | Remove extraction schema |
+
+```python
+# Create with auto-resolved domain
+inbox = client.inboxes.create(local_part="support")
+
+# Create with webhook
+inbox = client.inboxes.create(
+    local_part="billing",
+    webhook={"endpoint": "https://your-server.com/webhook"},
+)
+
+# List all inboxes
+all_inboxes = client.inboxes.list()
+
+# List for a specific domain
+domain_inboxes = client.inboxes.list(domain_id="d_abc")
+
+# Configure structured extraction on an inbox
+client.inboxes.set_extraction_schema(
+    domain_id="d_abc",
+    inbox_id=inbox.id,
+    name="support_ticket",
+    schema={
+        "type": "object",
+        "properties": {
+            "intent": {"type": "string"},
+            "urgency": {"type": "string"},
+        },
+    },
+)
+```
+
+### `client.threads`
+
+| Method | Description |
+|--------|-------------|
+| `list(inbox_id?, domain_id?, limit?, cursor?, order?)` | List threads (paginated) |
+| `messages(thread_id, limit?, order?)` | Get messages in a thread |
+| `metadata(thread_id)` | Get triage metadata |
+| `set_status(thread_id, status)` | Set triage status |
+| `add_tags(thread_id, tags)` | Add tags |
+| `remove_tags(thread_id, tags)` | Remove tags |
+| `assign(thread_id, assigned_to?)` | Assign/unassign thread |
+
+```python
+# Paginated thread listing
+result = client.threads.list(inbox_id="inbox_xyz", limit=20)
+for thread in result.data:
+    print(f"{thread.subject} — {thread.message_count} messages")
+
+# Next page
+if result.has_more:
+    next_page = client.threads.list(
+        inbox_id="inbox_xyz",
+        cursor=result.next_cursor,
+    )
+
+# Read thread messages
+messages = client.threads.messages("thread_abc", order="asc")
+for msg in messages:
+    sender = next(p.identity for p in msg.participants if p.role == "sender")
+    print(f"{sender}: {msg.content[:100]}")
+
+# Triage
+meta = client.threads.metadata("thread_abc")
+client.threads.set_status("thread_abc", "needs_reply")
+client.threads.add_tags("thread_abc", ["vip", "urgent"])
+client.threads.assign("thread_abc", "agent:alex")
+```
+
+### `client.search`
+
+| Method | Description |
+|--------|-------------|
+| `threads(query, inbox_id?, domain_id?, limit?)` | Semantic thread search |
+
+```python
+results = client.search.threads(
+    "refund request from enterprise customer",
+    inbox_id="inbox_xyz",
+    limit=10,
+)
+```
+
+### `client.delivery`
+
+| Method | Description |
+|--------|-------------|
+| `metrics(inbox_id?, domain_id?, period?)` | Delivery metrics |
+| `events(message_id?, inbox_id?, domain_id?, event_type?, limit?)` | Delivery event log |
+| `suppressions(inbox_id?, domain_id?, limit?)` | Suppression list |
+
+```python
+metrics = client.delivery.metrics(inbox_id="inbox_xyz", period="7d")
+events = client.delivery.events(domain_id="d_abc", limit=25)
+suppressions = client.delivery.suppressions(inbox_id="inbox_xyz")
+```
+
+### `client.domains`
+
+| Method | Description |
+|--------|-------------|
+| `list()` | List all domains |
+| `create(name, region?)` | Create a custom domain |
+| `get(domain_id)` | Get domain details |
+| `verify(domain_id)` | Trigger DNS verification |
+| `records(domain_id)` | Get required DNS records |
+
+```python
+# Add a custom domain
+domain = client.domains.create(name="mail.mycompany.com")
+
+# Check DNS records to add
+records = client.domains.records(domain.id)
+for record in records:
+    print(f"{record.type} {record.name} → {record.value}")
+
+# Verify after DNS is configured
+result = client.domains.verify(domain.id)
+```
+
+### `client.attachments`
+
+| Method | Description |
+|--------|-------------|
+| `upload(content, filename, mime_type)` | Upload a file (base64) |
+| `get(attachment_id)` | Get attachment metadata |
+| `url(attachment_id, expires_in?)` | Get download URL |
+
+```python
+import base64
+
+with open("report.pdf", "rb") as f:
+    content = base64.b64encode(f.read()).decode()
+
+upload = client.attachments.upload(
+    content=content,
+    filename="report.pdf",
+    mime_type="application/pdf",
+)
+
+# Use in email
+client.messages.send(
+    to="user@example.com",
+    subject="Report",
+    html="<p>See attached.</p>",
+    attachments=[upload.attachment_id],
+)
+
+# Get download URL
+url_info = client.attachments.url(upload.attachment_id, expires_in=7200)
+print(url_info.url)
+```
+
+## Pydantic models
+
+All responses are validated Pydantic models with type hints:
+
+```python
+from commune import (
+    Domain,
+    Inbox,
+    Thread,
+    ThreadList,
+    Message,
+    Participant,
+    MessageMetadata,
+    Attachment,
+    AttachmentUpload,
+    AttachmentUrl,
+    SendMessageResult,
+)
+```
+
+## Error handling
+
+The SDK raises typed exceptions:
+
+```python
+from commune import (
+    CommuneError,         # Base exception
+    AuthenticationError,  # Invalid or missing API key
+    PermissionDeniedError,# Insufficient permissions
+    NotFoundError,        # Resource not found
+    ValidationError,      # Invalid request parameters
+    RateLimitError,       # Rate limit exceeded
+)
+
+try:
+    client.messages.send(to="invalid", subject="Test")
+except ValidationError as e:
+    print(f"Bad request: {e}")
+except RateLimitError:
+    print("Slow down!")
+except CommuneError as e:
+    print(f"API error: {e}")
+```
+
+## Webhook signature verification
+
+Verify that incoming webhooks are genuinely from Commune:
+
+```python
+from commune import verify_signature, WebhookVerificationError
+
+try:
+    verify_signature(
+        payload=request.body,
+        signature=request.headers["x-commune-signature"],
+        secret="your_webhook_secret",
+    )
+except WebhookVerificationError:
+    return "Invalid signature", 403
+```
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="TypeScript SDK" icon="js" href="/sdks/typescript">
+  Official Node.js and TypeScript SDK for Commune.
+</Card>
+
+<Card title="MCP Server" icon="robot" href="/sdks/mcp">
+  Connect Claude Desktop, Cursor, and Windsurf to Commune.
+</Card>
+
+<Card title="REST API" icon="webhook" href="/sdks/rest-api">
+  Direct HTTP access from any language or environment.
+</Card>
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Build a complete email agent end-to-end in 5 minutes.
+</Card>
+
+</Columns>

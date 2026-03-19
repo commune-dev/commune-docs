@@ -1,0 +1,104 @@
+# Commune
+
+Commune is email and SMS infrastructure purpose-built for AI agents. Give your agent a real email address, handle sending and receiving, track deliverability, extract structured data from inbound emails, manage conversation threads, and send SMS — all through a simple API.
+
+## Docs
+
+- [Introduction](https://docs.commune.email/introduction.md): Email infrastructure built for AI agents. Gives agents real inboxes, handles deliverability, extracts structured data, manages threads.
+- [Quickstart](https://docs.commune.email/quickstart.md): Build a complete email agent in 5 minutes — send, receive, extract structured data, and handle attachments.
+- [Quickstart SMS](https://docs.commune.email/quickstart-sms.md): Send and receive SMS messages in under 5 minutes.
+- [Authentication](https://docs.commune.email/authentication.md): Authenticate API requests with Bearer tokens and API keys.
+- [Capability Matrix](https://docs.commune.email/capability-matrix.md): Compare features available across free, agent_pro, business, and enterprise plans.
+
+## SDKs
+
+- [TypeScript SDK](https://docs.commune.email/sdks/typescript.md): Install and use the commune-ai Node.js SDK. Covers inboxes, messages, threads, attachments, domains.
+- [Python SDK](https://docs.commune.email/sdks/python.md): Install and use the commune-mail Python SDK. Full API coverage with sync and async support.
+- [MCP Server](https://docs.commune.email/sdks/mcp.md): Use Commune from Claude Desktop, Cursor, or Windsurf via the MCP server protocol.
+- [REST API](https://docs.commune.email/sdks/rest-api.md): Call the Commune API directly via HTTP with Bearer token authentication.
+
+## Features
+
+- [Inboxes](https://docs.commune.email/features/inboxes.md): Create and manage email inboxes for agents. One API call gives your agent a real email address.
+- [Messages](https://docs.commune.email/features/messages.md): Send and list emails. Supports HTML, plain text, attachments, threading, and scheduling.
+- [Threads](https://docs.commune.email/features/threads.md): Automatic conversation threading. Set status, add tags, assign threads, read full message history.
+- [Domains](https://docs.commune.email/features/domains.md): Add custom domains with automatic DKIM, SPF, and DMARC configuration.
+- [Webhooks](https://docs.commune.email/features/webhooks.md): Receive real-time notifications when emails arrive. Delivers parsed email, extracted data, and security context.
+- [Attachments](https://docs.commune.email/features/attachments.md): Upload, send, and download file attachments. Includes antivirus scanning.
+- [Structured Extraction](https://docs.commune.email/features/structured-extraction.md): Configure JSON schemas to automatically extract structured data from every inbound email using LLM.
+- [Delivery Monitoring](https://docs.commune.email/features/delivery-monitoring.md): Track bounce rates, complaint rates, and delivery status per inbox.
+- [Search](https://docs.commune.email/features/search.md): Search email threads using semantic (vector) search or regex patterns.
+- [Data Deletion](https://docs.commune.email/features/data-deletion.md): Delete messages, threads, or all data for an inbox. GDPR-compliant data removal.
+
+## Phone & SMS
+
+- [Phone Numbers](https://docs.commune.email/phone/phone-numbers.md): Buy, configure, and manage phone numbers. Set allow/block lists, auto-reply, and inbound webhooks.
+- [SMS](https://docs.commune.email/phone/sms.md): Send and receive SMS and MMS messages. View conversation threads and manage suppressions.
+- [Voice Calls](https://docs.commune.email/phone/voice-calls.md): Initiate outbound AI voice calls and manage active calls. Transcript and tool call log per call.
+- [Voice Agents](https://docs.commune.email/phone/voice-agents.md): Configure an AI voice agent per phone number with system prompt, voice, tools, and call limits.
+- [Voice Tools](https://docs.commune.email/phone/tools.md): Create webhook-based tools that voice agents can call during live calls to fetch data or take actions.
+
+## Security
+
+- [Security Overview](https://docs.commune.email/security/overview.md): Overview of Commune's security model including encryption, authentication, and compliance.
+- [Email Authentication](https://docs.commune.email/security/email-authentication.md): How Commune configures DKIM, SPF, and DMARC for every domain automatically.
+- [Prompt Injection Detection](https://docs.commune.email/security/prompt-injection.md): How Commune detects and scores prompt injection attempts in inbound email content.
+- [Spam Prevention](https://docs.commune.email/security/spam-prevention.md): Inbound spam scoring, content analysis, sender reputation checking, and suppression lists.
+- [Encryption](https://docs.commune.email/security/encryption.md): AES-256-GCM encryption at rest for all email content and metadata.
+- [Rate Limits](https://docs.commune.email/security/rate-limits.md): Per-second and daily rate limits, burst detection, and sending health gates.
+
+## Agent Authentication
+
+- [Agent Auth](https://docs.commune.email/agents/agent-auth.md): Ed25519 challenge-response authentication for AI agents. Fully programmatic — no browser, no email, no human.
+
+## Integrations
+
+- [OpenClaw](https://docs.commune.email/integrations/openclaw.md): Integrate Commune with OpenClaw agents for email sending and receiving.
+- [Coding Agents](https://docs.commune.email/integrations/coding-agents.md): Add email capabilities to coding agents like Cursor, Windsurf, and Claude Code.
+
+## Examples
+
+- [Support Agent](https://docs.commune.email/examples/support-agent.md): Build a complete customer support email agent with triage, routing, and automated responses.
+- [Churn Agent](https://docs.commune.email/examples/churn-agent.md): Build an agent that monitors for cancellation signals and handles churn prevention email flows.
+
+## Community
+
+- [Contributing](https://docs.commune.email/community/contributing.md): Contribute to the Commune open-source codebase. Source available under BSL 1.1.
+
+## Knowledge Base
+
+- [How do I give my AI agent an email address?](https://docs.commune.email/knowledge-base/how-do-i-give-my-agent-an-email-address.md): Create an inbox with one API call. No domain setup required to start.
+- [Do AI agents need their own email infrastructure?](https://docs.commune.email/knowledge-base/do-agents-need-own-email-infrastructure.md): Why shared ESP accounts break for autonomous agents and what agent-native email provides.
+- [How do I prevent my agent's emails from landing in spam?](https://docs.commune.email/knowledge-base/how-to-prevent-agent-emails-from-spam.md): DKIM/SPF/DMARC, domain warmup, bounce rates, complaint rates — what matters and how Commune handles it.
+- [How do I handle email replies in my agent?](https://docs.commune.email/knowledge-base/how-to-handle-email-replies.md): Configure webhooks to receive inbound emails, resolve threads, and reply in the same conversation.
+- [What happens if my agent sends too many emails?](https://docs.commune.email/knowledge-base/what-happens-if-agent-sends-too-many-emails.md): Rate limits, burst detection, sending health gates, and how Commune protects your sender reputation.
+- [How do I extract structured data from inbound emails?](https://docs.commune.email/knowledge-base/how-to-extract-structured-data.md): Configure a JSON schema on an inbox to automatically extract fields from every inbound email.
+- [What is prompt injection via email?](https://docs.commune.email/knowledge-base/what-is-prompt-injection-via-email.md): How attackers embed LLM instructions in email bodies, and how Commune detects it.
+- [How do I warm up a new domain?](https://docs.commune.email/knowledge-base/how-to-warm-up-domain.md): Domain warmup ramps from 50 to 5000 emails/day over 14 days. Commune handles this automatically.
+- [Can my agent send and receive email without a custom domain?](https://docs.commune.email/knowledge-base/sending-without-custom-domain.md): Use the shared commune.email domain to get started instantly. Add a custom domain later.
+- [How does Commune thread emails?](https://docs.commune.email/knowledge-base/how-does-commune-thread-emails.md): RFC 5322 Message-ID headers, routing tokens, and subject-line fallback — in that priority order.
+- [How do I set up per-agent inboxes for a multi-agent system?](https://docs.commune.email/knowledge-base/per-agent-inboxes-multi-agent.md): Create one inbox per agent or per campaign for sender reputation isolation and reply routing.
+- [What is agent authentication and why does it matter?](https://docs.commune.email/knowledge-base/what-is-agent-authentication.md): Ed25519 challenge-response auth lets agents register and authenticate without human intervention.
+- [How do I add Commune to a LangChain agent?](https://docs.commune.email/knowledge-base/commune-with-langchain.md): Create a custom LangChain tool wrapping the Commune SDK to give your agent email capabilities.
+- [How do I use Commune with the OpenAI Agents SDK?](https://docs.commune.email/knowledge-base/commune-with-openai-agents.md): Add Commune as a tool in the OpenAI Agents SDK for send, receive, and thread management.
+- [How do I use Commune with CrewAI?](https://docs.commune.email/knowledge-base/commune-with-crewai.md): Create CommuneSendEmailTool and CommuneReadThreadTool as BaseTool subclasses and assign to CrewAI agents.
+- [How do I use Commune with n8n?](https://docs.commune.email/knowledge-base/commune-with-n8n.md): Use the HTTP Request node to send email and Webhook node to receive inbound emails from Commune.
+- [How do I send emails in bulk from an agent?](https://docs.commune.email/knowledge-base/batch-email-agents.md): Controlled send loop with 100ms delay between sends, warmup limit checks, and per-send error handling.
+- [What are Commune's pricing plans?](https://docs.commune.email/knowledge-base/pricing.md): Free ($0), Agent Pro ($20/mo), Business ($150/mo), Enterprise (custom).
+
+## Blog
+
+- [AI Agents Have Compute. They Need Communication.](https://commune.email/blog/agent-communications-layer): Why agents need a communication layer and what agent-native email infrastructure means.
+- [Does Your AI Agent Need Its Own Email Address?](https://commune.email/blog/does-my-agent-need-an-email-address): Shared inboxes vs dedicated identity — what breaks without per-agent email addresses.
+- [Why Agent Emails Land in Spam (And How to Fix It)](https://commune.email/blog/why-agent-emails-land-in-spam): Authentication failures vs reputation signals — what inbox providers measure and how to fix it.
+- [Prompt Injection via Email: The Attack Your Agent Framework Ignores](https://commune.email/blog/prompt-injection-via-email): Adversarial emails that hijack agent behavior, with detection approaches and defense patterns.
+- [How to Build an Outbound Sales Agent That Actually Gets Replies](https://commune.email/blog/outbound-sales-agent): Three infrastructure failure modes that kill AI outbound agents and how to fix them.
+- [Multi-Agent Email Architecture: Four Routing Patterns](https://commune.email/blog/multi-agent-email-routing): One inbox per agent, routing middleware, agent handoff via CC, per-customer inboxes — compared.
+- [Running 100+ Agent Inboxes: Fleet Management for Email](https://commune.email/blog/agent-email-at-scale): Create, warm up, monitor, and lifecycle-manage a fleet of agent inboxes at scale.
+- [How Email Threading Works (And Why Your Agent Gets It Wrong)](https://commune.email/blog/how-email-threading-works): RFC 5322 headers, routing tokens, and subject fallback — how Commune resolves conversation threads.
+- [How to Build a Churn Prevention Agent with Email](https://commune.email/blog/churn-prevention-email-agent): Read cancellation signals, classify urgency with extraction, and respond before the support team sees it.
+- [Stop Parsing Email Bodies. Use Structured Extraction.](https://commune.email/blog/email-structured-extraction): JSON schema on an inbox → LLM extracts fields from every inbound email automatically.
+- [How to Add Email to a LangChain Agent](https://commune.email/blog/email-for-langchain-agents): Step-by-step Python tutorial with custom BaseTool, webhook handler, and structured extraction.
+- [How to Add Email to a CrewAI Agent](https://commune.email/blog/crewai-email-agent): Build a CrewAI outreach crew with Commune tools, per-agent inboxes, and FastAPI webhook handler.
+- [How to Add Email to an OpenAI Agents SDK Agent](https://commune.email/blog/openai-agents-sdk-email): Three @function_tool decorators give your agent send, read, and thread capabilities.
+- [Agent Authentication Standard](https://commune.email/blog/agent-authentication-standard): Ed25519 challenge-response for AI agents — no browser, no human, complete spec with code examples.

@@ -1,0 +1,294 @@
+---
+title: "How do I set up email signatures for my agent?"
+description: "Build consistent HTML email signatures for AI agents — identity, legal compliance, and AI disclosure best practices."
+---
+
+## The short answer
+
+Append an HTML signature block to every outbound email's `html` field. Build a reusable function that takes agent name, role, and company info, then call it before every `messages.send()`. Include an AI disclosure line — recipients should know when they are communicating with an agent.
+
+## Why agents need signatures
+
+A signature is not decoration. It serves three purposes:
+
+1. **Identity.** Recipients need to know who (or what) they are talking to. An agent named "Aria" that signs emails as "Aria, Support Agent at Acme" builds familiarity across a conversation thread.
+2. **Legal compliance.** Many jurisdictions require business emails to include company name, registration number, and physical address. The EU's eCommerce Directive and CAN-SPAM both mandate sender identification.
+3. **Trust and AI disclosure.** Recipients increasingly expect transparency about AI-generated communication. A clear "This email was composed by an AI agent" line prevents confusion and builds trust. Some industries (financial services, healthcare) are moving toward mandatory AI disclosure requirements.
+
+## Building a signature template
+
+Create a function that returns the signature HTML. Call it in every send path so the signature is consistent across all agent emails.
+
+<CodeGroup>
+
+```typescript TypeScript
+interface SignatureParams {
+  agentName: string;
+  agentRole: string;
+  companyName: string;
+  companyUrl: string;
+  companyAddress?: string;
+  logoUrl?: string;
+}
+
+function agentSignature(params: SignatureParams): string {
+  const logo = params.logoUrl
+    ? `<img src="${params.logoUrl}" alt="${params.companyName}" style="height: 32px; margin-bottom: 12px;" /><br />`
+    : '';
+
+  const address = params.companyAddress
+    ? `<p style="font-size: 12px; color: #999; margin: 4px 0;">${params.companyAddress}</p>`
+    : '';
+
+  return `
+    <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+      ${logo}
+      <p style="font-size: 14px; color: #1a1a1a; margin: 0;">
+        <strong>${params.agentName}</strong>
+      </p>
+      <p style="font-size: 13px; color: #666; margin: 4px 0;">
+        ${params.agentRole} &middot;
+        <a href="${params.companyUrl}" style="color: #2563eb; text-decoration: none;">${params.companyName}</a>
+      </p>
+      ${address}
+      <p style="font-size: 11px; color: #aaa; margin: 12px 0 0 0; font-style: italic;">
+        This email was composed by an AI agent. Reply normally — a human can review at any time.
+      </p>
+    </div>
+  `;
+}
+```
+
+```python Python
+def agent_signature(
+    agent_name: str,
+    agent_role: str,
+    company_name: str,
+    company_url: str,
+    company_address: str | None = None,
+    logo_url: str | None = None,
+) -> str:
+    logo = ""
+    if logo_url:
+        logo = f'<img src="{logo_url}" alt="{company_name}" style="height: 32px; margin-bottom: 12px;" /><br />'
+
+    address = ""
+    if company_address:
+        address = f'<p style="font-size: 12px; color: #999; margin: 4px 0;">{company_address}</p>'
+
+    return f"""
+    <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+      {logo}
+      <p style="font-size: 14px; color: #1a1a1a; margin: 0;">
+        <strong>{agent_name}</strong>
+      </p>
+      <p style="font-size: 13px; color: #666; margin: 4px 0;">
+        {agent_role} &middot;
+        <a href="{company_url}" style="color: #2563eb; text-decoration: none;">{company_name}</a>
+      </p>
+      {address}
+      <p style="font-size: 11px; color: #aaa; margin: 12px 0 0 0; font-style: italic;">
+        This email was composed by an AI agent. Reply normally — a human can review at any time.
+      </p>
+    </div>
+    """
+```
+
+</CodeGroup>
+
+## Using the signature in every send
+
+Wrap your send logic so the signature is always appended. This prevents individual agent actions from forgetting to include it.
+
+<CodeGroup>
+
+```typescript TypeScript
+const SIGNATURE = agentSignature({
+  agentName: 'Aria',
+  agentRole: 'Support Agent',
+  companyName: 'Acme Inc.',
+  companyUrl: 'https://acme.com',
+  companyAddress: '123 Market St, San Francisco, CA 94105',
+});
+
+async function sendAgentEmail(params: {
+  to: string;
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+  threadId?: string;
+  inboxId: string;
+  attachments?: string[];
+}) {
+  await commune.messages.send({
+    to: params.to,
+    subject: params.subject,
+    inboxId: params.inboxId,
+    threadId: params.threadId,
+    text: params.bodyText + '\n\n--\nAria, Support Agent at Acme Inc.',
+    html: params.bodyHtml + SIGNATURE,
+    attachments: params.attachments,
+  });
+}
+
+// Your agent just calls sendAgentEmail — signature is automatic
+const replyBody = await llm.generate(conversationHistory);
+await sendAgentEmail({
+  to: customerEmail,
+  subject: `Re: ${originalSubject}`,
+  bodyHtml: `<p>${replyBody.replace(/\n/g, '<br />')}</p>`,
+  bodyText: replyBody,
+  threadId: threadId,
+  inboxId: supportInboxId,
+});
+```
+
+```python Python
+SIGNATURE = agent_signature(
+    agent_name="Aria",
+    agent_role="Support Agent",
+    company_name="Acme Inc.",
+    company_url="https://acme.com",
+    company_address="123 Market St, San Francisco, CA 94105",
+)
+
+def send_agent_email(
+    to: str,
+    subject: str,
+    body_html: str,
+    body_text: str,
+    inbox_id: str,
+    thread_id: str | None = None,
+    attachments: list[str] | None = None,
+):
+    client.messages.send(
+        to=to,
+        subject=subject,
+        inbox_id=inbox_id,
+        thread_id=thread_id,
+        text=body_text + "\n\n--\nAria, Support Agent at Acme Inc.",
+        html=body_html + SIGNATURE,
+        attachments=attachments,
+    )
+
+# Your agent just calls send_agent_email — signature is automatic
+reply_body = llm.generate(conversation_history)
+send_agent_email(
+    to=customer_email,
+    subject=f"Re: {original_subject}",
+    body_html=f"<p>{reply_body.replace(chr(10), '<br />')}</p>",
+    body_text=reply_body,
+    thread_id=thread_id,
+    inbox_id=support_inbox_id,
+)
+```
+
+</CodeGroup>
+
+## Multi-agent signatures
+
+If you run multiple agents (support, sales, billing), each should have a distinct identity. Store signature config per inbox or per agent role.
+
+<CodeGroup>
+
+```typescript TypeScript
+const AGENT_SIGNATURES: Record<string, string> = {
+  'inb_support_01': agentSignature({
+    agentName: 'Aria',
+    agentRole: 'Support Agent',
+    companyName: 'Acme Inc.',
+    companyUrl: 'https://acme.com',
+  }),
+  'inb_sales_01': agentSignature({
+    agentName: 'Marcus',
+    agentRole: 'Sales Development',
+    companyName: 'Acme Inc.',
+    companyUrl: 'https://acme.com',
+  }),
+  'inb_billing_01': agentSignature({
+    agentName: 'Nova',
+    agentRole: 'Billing Agent',
+    companyName: 'Acme Inc.',
+    companyUrl: 'https://acme.com',
+  }),
+};
+
+function getSignature(inboxId: string): string {
+  return AGENT_SIGNATURES[inboxId] ?? AGENT_SIGNATURES['inb_support_01'];
+}
+```
+
+```python Python
+AGENT_SIGNATURES = {
+    "inb_support_01": agent_signature(
+        agent_name="Aria",
+        agent_role="Support Agent",
+        company_name="Acme Inc.",
+        company_url="https://acme.com",
+    ),
+    "inb_sales_01": agent_signature(
+        agent_name="Marcus",
+        agent_role="Sales Development",
+        company_name="Acme Inc.",
+        company_url="https://acme.com",
+    ),
+    "inb_billing_01": agent_signature(
+        agent_name="Nova",
+        agent_role="Billing Agent",
+        company_name="Acme Inc.",
+        company_url="https://acme.com",
+    ),
+}
+
+def get_signature(inbox_id: str) -> str:
+    return AGENT_SIGNATURES.get(inbox_id, AGENT_SIGNATURES["inb_support_01"])
+```
+
+</CodeGroup>
+
+## Best practices
+
+**Do:**
+- Include agent name and role so recipients build familiarity
+- Add a one-line AI disclosure — builds trust and may be legally required
+- Include company name, website, and physical address for CAN-SPAM compliance
+- Use a system font stack — web fonts do not work in email clients
+- Keep the signature under 6 lines — long signatures annoy recipients
+- Use the same signature within a thread — switching signatures mid-conversation is confusing
+
+**Don't:**
+- Embed large images — they trigger spam filters and slow load times
+- Use `<style>` tags — Gmail and Outlook strip them (use inline styles)
+- Include social media icons as base64 data URIs — many clients block these
+- Add "Sent from my AI" as a P.S. — make it part of the structured signature instead
+- Put the disclosure in 6px font — that defeats the purpose
+
+## The AI disclosure line
+
+This is the most important part of an agent signature. Here are three patterns ranging from minimal to explicit:
+
+```
+Minimal:    "AI-assisted reply"
+Standard:   "This email was composed by an AI agent."
+Explicit:   "This email was composed by an AI agent. Reply normally — a human can review at any time."
+```
+
+The "explicit" pattern is recommended. It tells the recipient three things: this is AI-generated, they can reply naturally, and a human is available. That is the right balance of transparency and reassurance.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Sending HTML Emails" icon="code" href="/knowledge-base/how-to-send-html-emails">
+  Format agent emails with HTML — inline styles, templates, and responsive design.
+</Card>
+
+<Card title="Per-Agent Inboxes" icon="users" href="/knowledge-base/per-agent-inboxes-multi-agent">
+  Give each agent its own inbox for identity isolation and reply routing.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-check" href="/security/spam-prevention">
+  How signatures and sender identity affect deliverability scores.
+</Card>
+
+</Columns>

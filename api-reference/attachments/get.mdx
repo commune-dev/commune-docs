@@ -1,0 +1,125 @@
+---
+title: "Get attachment"
+api: "GET /v1/attachments/:id"
+description: "Retrieve attachment metadata by ID. To get a download URL, use the /url sub-endpoint."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const attachment = await commune.attachments.get('a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6');
+
+console.log(attachment.data.filename);   // contract.pdf
+console.log(attachment.data.mime_type);  // application/pdf
+console.log(attachment.data.size);       // 204800
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+attachment = client.attachments.get("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6")
+
+print(attachment.data.filename)
+print(attachment.data.size)
+```
+```bash MCP
+get_attachment(id="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6")
+```
+```bash cURL
+curl "https://api.commune.email/v1/attachments/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune attachments get a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Metadata
+{
+  "data": {
+    "attachment_id": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "message_id": "49a3999c-0ce1-4ea6-ab68-e08a5c73e498",
+    "filename": "contract.pdf",
+    "mime_type": "application/pdf",
+    "size": 204800,
+    "source": "email",
+    "storage_type": "cloudinary"
+  }
+}
+```
+```json 404 Not Found
+{
+  "error": "Attachment not found"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The attachment ID returned by [Upload attachment](/api-reference/attachments/upload) or found in a message's `metadata.attachment_ids` array.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  Attachment metadata. The raw file content (`content_base64`) is not returned by this endpoint for security and performance reasons.
+
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="attachment_id" type="string">
+      Unique attachment identifier (32-character hex string).
+    </ResponseField>
+    <ResponseField name="message_id" type="string">
+      ID of the message this attachment is associated with. Empty string for pre-uploaded attachments that have not yet been sent.
+    </ResponseField>
+    <ResponseField name="filename" type="string">
+      Original filename of the attachment.
+    </ResponseField>
+    <ResponseField name="mime_type" type="string">
+      MIME type of the file.
+    </ResponseField>
+    <ResponseField name="size" type="number">
+      File size in bytes.
+    </ResponseField>
+    <ResponseField name="source" type="string">
+      Channel the attachment originated from. Always `"email"` for email attachments.
+    </ResponseField>
+    <ResponseField name="storage_type" type="string">
+      Backend storage location. One of: `cloudinary`, `database`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Download URL
+
+To get a temporary signed download URL for the attachment content, call `GET /v1/attachments/:id/url` with an optional `expires_in` query parameter (seconds, default `3600`):
+
+```bash cURL
+curl "https://api.commune.email/v1/attachments/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6/url?expires_in=3600" \
+  -H "Authorization: Bearer comm_..."
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "url": "https://res.cloudinary.com/...",
+    "expires_in": 3600,
+    "filename": "contract.pdf",
+    "mime_type": "application/pdf",
+    "size": 204800
+  }
+}
+```

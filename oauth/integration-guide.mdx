@@ -1,0 +1,249 @@
+---
+title: Integration Guide
+description: Register your app, add the sign-in flow, verify agents, fetch profiles, manage tokens, handle errors.
+---
+
+## (1) Register your app
+
+You need a `client_id` and `client_secret` before you can use any of the OAuth endpoints.
+
+<Tabs>
+
+<Tab title="Dashboard">
+
+{/* TODO: Screenshot — Dashboard → OAuth Apps → Create New App */}
+
+Go to your [Commune Dashboard](https://commune.email/dashboard), open **OAuth Apps**, click **Create New App**. Enter your app name and your production domain. Copy the `client_secret` immediately. It's displayed once and can't be retrieved later.
+
+{/* TODO: Screenshot — client_id and client_secret displayed after creation */}
+
+</Tab>
+
+<Tab title="API">
+
+```bash
+curl -X POST https://api.commune.email/oauth/clients \
+  -H "Authorization: Bearer comm_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Super Memory", "websiteUrl": "https://supermemory.com"}'
+```
+
+</Tab>
+
+</Tabs>
+
+Store both values in your server environment:
+
+```bash .env
+COMMUNE_CLIENT_ID=comm_client_xxx
+COMMUNE_CLIENT_SECRET=comm_secret_xxx
+```
+
+The `client_secret` authenticates your server to Commune. It should never appear in frontend code, mobile apps, or version control.
+
+---
+
+## (2) Add the button
+
+Put a "Continue with Commune" button on your sign-in or sign-up page. When the agent clicks it, show an email input field.
+
+{/* TODO: Screenshot — the button on a sign-in page, then the email input that appears */}
+
+The agent enters their Commune email address (something like `acme-support@commune.email`) and clicks "Send Code". Your frontend sends the email to your backend.
+
+---
+
+## (3) Send the verification code
+
+Your backend receives the email and asks Commune to send a 6-digit code to the agent's inbox.
+
+```typescript
+const resp = await fetch('https://api.commune.email/oauth/send-code', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Basic ${credentials}`,  // base64(client_id:client_secret)
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ email }),
+});
+
+const { request_id, email_hint, expires_in } = await resp.json();
+```
+
+Return the `request_id` to your frontend. Show a code input field. Display the `email_hint` (e.g. `a***t@commune.email`) so the agent knows where to look. The code expires in 10 minutes.
+
+{/* TODO: Screenshot — the code input field on your page */}
+
+---
+
+## (4) Verify the code
+
+The agent reads the 6-digit code from their Commune inbox and enters it on your page. Your backend sends it to Commune for verification.
+
+```typescript
+const resp = await fetch('https://api.commune.email/oauth/verify-code', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Basic ${credentials}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ request_id, code }),
+});
+
+const { agent_id, access_token, refresh_token } = await resp.json();
+```
+
+If the code is correct, you get back three things:
+
+`agent_id` is the agent's permanent, unique identifier. It never changes. This is what you store in your database. It's the same concept as Google's `sub` field, and it serves the same purpose: if this ID is already in your users table, it's a returning agent. If not, it's a new sign-up.
+
+`access_token` is valid for 1 hour. Use it to call `GET /oauth/agentinfo` to fetch the agent's profile.
+
+`refresh_token` is valid for 30 days. Use it to get a new `access_token` when the current one expires. Each refresh token can only be used once; the response includes a replacement.
+
+---
+
+## (5) Fetch the agent's profile
+
+Use the access token to get the agent's identity, trust data, and operator information.
+
+```typescript
+const resp = await fetch('https://api.commune.email/oauth/agentinfo', {
+  headers: { 'Authorization': `Bearer ${access_token}` },
+});
+const agent = await resp.json();
+```
+
+The response includes:
+
+```json
+{
+  "sub": "agt_4f3a9b2c...",
+  "name": "Acme Support Agent",
+  "email": "acme-support@commune.email",
+  "verified_agent": true,
+  "purpose": "Triage inbound support emails and route them to the right team",
+  "registered_at": "2026-01-15T08:30:00.000Z",
+  "account_age_days": 62,
+  "trust_level": "established",
+  "trust_score": 65,
+  "email_reputation": {
+    "score": 65, "grade": "B", "spam_agent": false,
+    "sends_last_30d": 142, "domain_verified": true
+  },
+  "org_name": "Acme Corp",
+  "org_tier": "agent_pro"
+}
+```
+
+You can call this endpoint anytime you need fresh data. Trust scores change over time as agents accumulate email history, so periodic checks give you more accurate access decisions.
+
+---
+
+## (6) Create a session
+
+After verification, look up the `agent_id` in your database. If it exists, the agent is returning. If not, create a new account.
+
+```typescript
+let user = await db.users.findOne({ communeAgentId: agent_id });
+
+if (!user) {
+  user = await db.users.create({
+    communeAgentId: agent_id,
+    communeRefreshToken: refresh_token,
+  });
+} else {
+  await db.users.update(user.id, { communeRefreshToken: refresh_token });
+}
+
+const session = await createSession(user.id);
+```
+
+There's no separate sign-up flow. The same button, same code entry, same API calls handle both cases. The only difference is whether `agent_id` already exists in your database.
+
+---
+
+## (7) Refresh expired tokens
+
+When the access token expires after 1 hour, exchange the refresh token for a new pair:
+
+```typescript
+const resp = await fetch('https://api.commune.email/oauth/token', {
+  method: 'POST',
+  headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: storedRefreshToken }),
+});
+
+const { access_token, refresh_token } = await resp.json();
+// The old refresh_token is now invalid. Save the new one.
+```
+
+If the refresh token itself has expired (after 30 days) or has already been used, the response will return `invalid_grant`. The agent needs to sign in again through the button-and-code flow.
+
+---
+
+## Errors
+
+| Error code | HTTP | What happened |
+|------------|------|---------------|
+| `agent_not_found` | 404 | The email isn't registered as a Commune agent inbox |
+| `rate_limited` | 429 | Too many codes sent to this email (max 3 per 15 minutes) |
+| `invalid_code` | 401 | Wrong code, expired (10 min), or already used |
+| `origin_not_allowed` | 403 | Request origin doesn't match your registered `websiteUrl` |
+| `agent_inactive` | 403 | The agent's Commune account has been suspended |
+| `invalid_grant` | 401 | Refresh token is expired, already used, or revoked |
+
+For `rate_limited`, the response includes a `retry_after` field in seconds.
+
+For `invalid_grant`, the agent needs to sign in again. This happens after 30 days of inactivity or if the refresh token was used by another request.
+
+---
+
+## Domain configuration
+
+Commune validates the `Origin` header on sign-in requests against the `websiteUrl` you registered when creating your OAuth client.
+
+Requests from your registered domain and its subdomains pass. Requests from `localhost` always pass regardless of your registered domain, so you don't need separate configuration for development. Server-to-server requests with no `Origin` header also pass, since they're authenticated by the `client_secret`.
+
+Requests from any other domain are rejected with `origin_not_allowed`.
+
+---
+
+## Common patterns
+
+Gate features based on the agent's trust level:
+
+```typescript
+if (agent.trust_level === 'new') return { access: 'read_only' };
+if (agent.trust_score >= 50)     return { access: 'full' };
+```
+
+Reject agents flagged as spam:
+
+```typescript
+if (agent.email_reputation.spam_agent) {
+  return res.status(403).json({ error: 'This agent has been flagged.' });
+}
+```
+
+Differentiate by operator plan:
+
+```typescript
+const premium = ['business', 'enterprise'].includes(agent.org_tier);
+```
+
+---
+
+## Next
+
+<Columns cols={2}>
+
+<Card title="API Reference" icon="square-terminal" href="/oauth/api-reference">
+  Every endpoint with interactive examples, error codes, and rate limits.
+</Card>
+
+<Card title="Architecture & Flow" icon="sitemap" href="/oauth/how-it-works">
+  Full sequence diagrams and system architecture.
+</Card>
+
+</Columns>

@@ -1,0 +1,752 @@
+---
+title: Phone Numbers & SMS
+description: Provision phone numbers and send/receive SMS through the agent API.
+---
+
+## Overview
+
+- **What it is:** Real phone numbers your agents can send and receive SMS from. One API call to provision, one to send.
+- **When to use it:** Agents that need to text users, run SMS verification flows, notify customers, or handle inbound support over SMS.
+- **What you need:** An API key, credits in your account, and a provisioned phone number.
+
+---
+
+## Number types
+
+Two types are available. For most agent use-cases, **start with toll-free**.
+
+| | Toll-Free | Local |
+|---|---|---|
+| Format | `+1 800/833/844/855/866/877/888` | `+1` + area code |
+| A2P registration | Simpler (self-serve) | 10DLC campaign (more friction) |
+| Best for | Transactional, high-volume | Conversational, local feel |
+| SMS/MMS | Yes | Yes |
+| Availability | Always available | Varies by area code |
+
+**Toll-free** numbers are easier to get started with — they don't require a full 10DLC brand/campaign registration upfront. Use local numbers when the area code matters to your users.
+
+---
+
+## Get a phone number
+
+### 1. Search for available numbers
+
+Find numbers before purchasing. Filter by type, country, region, or area code.
+
+<CodeGroup>
+
+```typescript TypeScript
+const numbers = await commune.phoneNumbers.listAvailable({
+  country: 'US',
+  type: 'TollFree',
+  limit: 10,
+});
+
+/*
+[
+  {
+    phoneNumber: '+18005551234',
+    friendlyName: '',
+    region: '',
+    isoCountry: 'US',
+    capabilities: { sms: true, mms: true, voice: false },
+    beta: false
+  }
+]
+*/
+```
+
+```python Python
+numbers = client.phone_numbers.list_available(
+    country="US",
+    type="TollFree",
+    limit=10,
+)
+```
+
+```bash REST
+GET /v1/phone-numbers/available?country=US&type=TollFree&limit=10
+Authorization: Bearer YOUR_API_KEY
+```
+
+</CodeGroup>
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `country` | string | `US` | ISO country code |
+| `type` | `TollFree` \| `Local` | `TollFree` | Number type |
+| `area_code` | string | — | Filter by area code (local only) |
+| `contains` | string | — | Pattern match on digits |
+| `in_region` | string | — | Filter by region/state code |
+| `sms_enabled` | boolean | `true` | Only show SMS-capable numbers |
+| `mms_enabled` | boolean | — | Only show MMS-capable numbers |
+| `limit` | number | 20 | Results to return |
+
+---
+
+### 2. Purchase the number
+
+<CodeGroup>
+
+```typescript TypeScript
+const number = await commune.phoneNumbers.purchase({
+  phone_number: '+18005551234', // from listAvailable, or omit to auto-select
+  type: 'tollfree',             // 'tollfree' | 'local' (default: 'tollfree')
+  country: 'US',                // default: 'US'
+  area_code: '415',             // optional, for local numbers
+  friendly_name: 'Support bot', // optional label
+});
+
+// Save number.id — you'll use it in every SMS send call
+console.log(number.id);                  // 'pn_abc123'
+console.log(number.number);              // '+18005551234'
+console.log(number.numberType);          // 'tollfree'
+console.log(number.status);              // 'active'
+console.log(number.capabilities);        // { sms: true, mms: true, voice: false }
+console.log(number.allowList);           // [] — only these numbers can text in (empty = allow all)
+console.log(number.blockList);           // [] — these numbers are blocked
+console.log(number.creditCostPerMonth);  // monthly rental in credits
+```
+
+```python Python
+number = client.phone_numbers.purchase(
+    phone_number="+18005551234",
+    type="tollfree",
+    country="US",
+    friendly_name="Support bot",
+)
+
+phone_number_id = number.id  # 'pn_abc123' — save this
+```
+
+```bash REST
+POST /v1/phone-numbers
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "phone_number": "+18005551234",
+  "type": "tollfree",
+  "country": "US",
+  "friendly_name": "Support bot"
+}
+```
+
+</CodeGroup>
+
+**Request fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `phone_number` | string | — | E.164 number to purchase. Omit to auto-select. |
+| `type` | `tollfree` \| `local` | `tollfree` | Number type |
+| `country` | string | `US` | ISO country code |
+| `area_code` | string | — | Preferred area code (local numbers) |
+| `friendly_name` | string | — | Optional label (max 100 chars) |
+
+**Response — `PhoneNumber` object:**
+
+```typescript
+interface PhoneNumber {
+  id: string;               // 'pn_...' — use as phone_number_id in SMS calls
+  number: string;           // E.164, e.g. '+18005551234'
+  numberType: 'tollfree' | 'local' | 'shortcode';
+  friendlyName: string | null;
+  country: string;          // 'US'
+  capabilities: {
+    sms: boolean;
+    mms: boolean;
+    voice: boolean;
+  };
+  status: 'active' | 'released' | 'suspended_non_payment';
+  allowList: string[];      // E.164 numbers allowed to text in (empty = allow all)
+  blockList: string[];      // E.164 numbers blocked from texting in
+  autoReply: {              // null if not configured
+    enabled: boolean;
+    body: string;           // message sent automatically on inbound
+  } | null;
+  creditCostPerMonth: number;   // monthly rental cost in credits
+  createdAt: string;            // ISO
+  updatedAt: string;            // ISO
+}
+```
+
+<Accordion title="Purchase errors">
+
+| Status | Error | Cause |
+|---|---|---|
+| 402 | `insufficient_phone_credits` | Not enough credits for purchase + first month |
+| 403 | `phone_number_quota_reached` | At your plan's max phone numbers |
+| 403 | `us_local_a2p_required` | US local requires A2P campaign registration |
+| 429 | `release_cooldown_active` | 30-day cooldown after releasing a number |
+
+</Accordion>
+
+---
+
+### 3. List and manage your numbers
+
+<CodeGroup>
+
+```typescript TypeScript
+// List all numbers
+const { data: numbers } = await commune.phoneNumbers.list();
+
+// Get a single number
+const number = await commune.phoneNumbers.get('pn_abc123');
+
+// Update settings
+await commune.phoneNumbers.update('pn_abc123', {
+  friendly_name: 'New label',
+  auto_reply: {
+    enabled: true,
+    body: 'Thanks for texting! We\'ll get back to you shortly.',
+  },
+  webhook: {
+    endpoint: 'https://your-server.com/webhook/sms',
+    secret: 'whsec_...',
+    events: ['inbound'],
+  },
+});
+
+// Release a number (no refund; history retained 30 days)
+await commune.phoneNumbers.release('pn_abc123');
+```
+
+```bash REST
+# List
+GET /v1/phone-numbers
+Authorization: Bearer YOUR_API_KEY
+
+# Update
+PATCH /v1/phone-numbers/pn_abc123
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "friendly_name": "New label",
+  "auto_reply": {
+    "enabled": true,
+    "body": "Thanks for texting!"
+  },
+  "webhook": {
+    "endpoint": "https://your-server.com/webhook/sms",
+    "events": ["inbound"]
+  }
+}
+
+# Release
+DELETE /v1/phone-numbers/pn_abc123
+Authorization: Bearer YOUR_API_KEY
+```
+
+</CodeGroup>
+
+**PATCH fields** (all optional):
+
+| Field | Type | Description |
+|---|---|---|
+| `friendly_name` | string | Display label (max 100 chars) |
+| `auto_reply.enabled` | boolean | Turn auto-reply on/off |
+| `auto_reply.body` | string | Message sent on every inbound SMS (max 1600 chars) |
+| `webhook.endpoint` | string | URL to receive inbound SMS events |
+| `webhook.secret` | string | Secret for webhook signature verification |
+| `webhook.events` | string[] | Event types to deliver (e.g. `['inbound']`) |
+
+---
+
+### 4. Allow-list and block-list
+
+Control which numbers can send inbound SMS to your number. Replaces the entire list on each call.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Only allow SMS from these numbers (empty array = allow all)
+await commune.phoneNumbers.setAllowList('pn_abc123', {
+  numbers: ['+14155551234', '+16505551234'],
+});
+
+// Block specific numbers
+await commune.phoneNumbers.setBlockList('pn_abc123', {
+  numbers: ['+19005551234'],
+});
+```
+
+```bash REST
+PUT /v1/phone-numbers/pn_abc123/allow-list
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{ "numbers": ["+14155551234", "+16505551234"] }
+
+PUT /v1/phone-numbers/pn_abc123/block-list
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{ "numbers": ["+19005551234"] }
+```
+
+</CodeGroup>
+
+<Note>
+Both endpoints replace the list entirely. Send an empty array `{ "numbers": [] }` to clear the list.
+All numbers must be E.164 format (e.g. `+14155551234`).
+</Note>
+
+---
+
+## Send SMS
+
+Requires `phone_number_id` from the purchase step. The `to` field must be E.164 format.
+
+<CodeGroup>
+
+```typescript TypeScript
+const result = await commune.sms.send({
+  to: '+14155551234',
+  body: 'Your code is 8472. Expires in 10 minutes.',
+  phone_number_id: 'pn_abc123',
+});
+
+console.log(result.message_id);      // 'sms_SM...'
+console.log(result.thread_id);       // deterministic 32-char hex thread ID
+console.log(result.status);          // 'accepted' on send; updates via webhook
+console.log(result.credits_charged); // credits deducted
+console.log(result.segments);        // SMS segments used
+```
+
+```python Python
+result = client.sms.send(
+    to="+14155551234",
+    body="Your code is 8472. Expires in 10 minutes.",
+    phone_number_id="pn_abc123",
+)
+```
+
+```bash REST
+POST /v1/sms/send
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "to": "+14155551234",
+  "body": "Your code is 8472. Expires in 10 minutes.",
+  "phone_number_id": "pn_abc123"
+}
+```
+
+</CodeGroup>
+
+**Request:**
+
+```typescript
+interface SendSmsRequest {
+  to: string;               // E.164 required: '+' + country code + number
+  body: string;             // 1–1600 chars
+  phone_number_id?: string; // omit to auto-select your active number
+  media_url?: string[];     // MMS: up to 10 public URLs (images, PDFs, etc.)
+  validity_period?: number; // seconds before expiry, 1–14400
+}
+```
+
+**Response:**
+
+```typescript
+interface SendSmsResult {
+  message_id: string;       // 'sms_SM...'
+  thread_id: string;        // SHA256(orgId:phoneNumberId:recipientNumber).slice(0,32)
+  status: string;           // 'accepted' on send; delivery updates via webhook
+  credits_charged: number;  // actual credits deducted
+  segments: number;         // SMS segment count
+}
+```
+
+### Send MMS
+
+Include `media_url` with public URLs. Supported types: images (JPEG, PNG, GIF), PDF, audio.
+
+```typescript
+const result = await commune.sms.send({
+  to: '+14155551234',
+  body: 'Here is your receipt.',
+  phone_number_id: 'pn_abc123',
+  media_url: ['https://yourcdn.com/receipt.pdf'],
+});
+```
+
+<Accordion title="Send errors">
+
+| Status | Error | Cause |
+|---|---|---|
+| 400 | `no_phone_number` | No active number for your org |
+| 400 | `phone_number_not_active` | The specified number is not active |
+| 402 | `insufficient_phone_credits` | Balance too low |
+| 422 | `recipient_suppressed` | Number opted out (STOP) |
+| 429 | `sms_daily_limit_per_number` | Per-number daily limit hit |
+| 429 | `sms_daily_limit_total` | Org daily total limit hit |
+| 429 | `sms_monthly_limit` | Monthly limit hit |
+
+</Accordion>
+
+---
+
+## Receive replies
+
+Inbound SMS are stored as conversation threads. Each unique pair of `(phone_number_id, remote_number)` has a single deterministic thread — the same thread ID regardless of who sends first.
+
+**Thread ID formula:** `SHA256(orgId:phoneNumberId:normalizedRemoteNumber).slice(0, 32)`
+
+### List conversations
+
+<CodeGroup>
+
+```typescript TypeScript
+const result = await commune.sms.listConversations({
+  phone_number_id: 'pn_abc123',
+  limit: 20,
+});
+
+/*
+result.data:
+[
+  {
+    thread_id: 'abc...',
+    remote_number: '+14155551234',
+    last_message_at: '2026-02-23T10:00:00Z',
+    last_message_preview: 'Got it, thanks!',
+    message_count: 4,
+    unread_count: 1
+  }
+]
+*/
+
+// Paginate with cursor
+const next = await commune.sms.listConversations({
+  phone_number_id: 'pn_abc123',
+  cursor: result.next_cursor,
+});
+```
+
+```bash REST
+GET /v1/sms/conversations?phone_number_id=pn_abc123&limit=20
+Authorization: Bearer YOUR_API_KEY
+```
+
+</CodeGroup>
+
+**Response:**
+
+```typescript
+interface SmsConversationsResponse {
+  data: SmsConversation[];
+  next_cursor: string | null;
+}
+
+interface SmsConversation {
+  thread_id: string;
+  remote_number: string;          // E.164
+  last_message_at: string;        // ISO
+  last_message_preview: string;
+  message_count: number;
+  unread_count: number;
+}
+```
+
+---
+
+### Get a conversation thread
+
+All messages in a thread, sorted oldest-first.
+
+<CodeGroup>
+
+```typescript TypeScript
+const result = await commune.sms.getConversation({
+  phone_number_id: 'pn_abc123',
+  remote_number: '+14155551234',
+});
+
+console.log(result.thread_id);
+result.data.forEach(msg => {
+  console.log(msg.direction);                    // 'inbound' | 'outbound'
+  console.log(msg.content);                      // message body
+  console.log(msg.metadata.delivery_status);     // 'delivered' | 'failed' | etc.
+  console.log(msg.metadata.from_number);
+  console.log(msg.metadata.to_number);
+  console.log(msg.created_at);
+});
+```
+
+```bash REST
+# URI-encode the + in the phone number
+GET /v1/sms/conversations/%2B14155551234?phone_number_id=pn_abc123
+Authorization: Bearer YOUR_API_KEY
+```
+
+</CodeGroup>
+
+**Response:**
+
+```typescript
+interface ConversationResponse {
+  data: SmsMessage[];
+  thread_id: string;
+}
+```
+
+**SMS message object:**
+
+```typescript
+interface SmsMessage {
+  message_id: string;
+  thread_id: string;
+  direction: 'inbound' | 'outbound';
+  content: string | null;
+  created_at: string;             // ISO
+  metadata: {
+    delivery_status: string | null;    // 'queued' | 'sending' | 'sent' | 'delivered' | 'undelivered' | 'failed' | 'received'
+    from_number: string | null;        // E.164
+    to_number: string | null;          // E.164
+    phone_number_id: string | null;    // 'pn_...'
+    message_sid: string | null;        // Twilio message SID
+    credits_charged: number | null;
+    sms_segments: number | null;
+    has_attachments: boolean;
+    mms_media: Array<{
+      url: string;
+      contentType: string;
+      storageUrl?: string;
+      attachmentId?: string;
+    }> | null;
+    delivery_data: Record<string, unknown> | null;
+  };
+}
+```
+
+---
+
+### List recent messages
+
+Flat list of all SMS messages for a phone number or org. Sorted newest-first.
+
+```typescript
+const { data: messages } = await commune.sms.list({
+  phone_number_id: 'pn_abc123',  // optional filter
+  limit: 50,                      // max 100
+  before: 'msg_...',             // cursor for pagination
+  after: 'msg_...',
+});
+```
+
+---
+
+## Credits
+
+Credits are deducted per message. 1 credit = $0.01 USD.
+
+| Message type | Credits |
+|---|---|
+| US/Canada outbound SMS | 2 |
+| US/Canada outbound MMS | 4 |
+| International outbound SMS | 4–20 (varies by country) |
+| International outbound MMS | 8–30 |
+| US/Canada inbound SMS | 1 |
+| Phone number rental | 150 / month |
+
+### Get balance
+
+```typescript TypeScript
+const { data: balance } = await commune.credits.getBalance();
+
+console.log(balance.total);          // total available credits
+console.log(balance.included);       // from your plan
+console.log(balance.purchased);      // bought separately
+console.log(balance.usedThisCycle);  // spent since last cycle reset
+console.log(balance.cycleResetAt);   // ISO date of next reset
+```
+
+```bash REST
+GET /v1/credits
+Authorization: Bearer YOUR_API_KEY
+```
+
+**Balance object:**
+
+```typescript
+interface CreditBalance {
+  included: number;
+  purchased: number;
+  total: number;
+  usedThisCycle: number;
+  cycleResetAt: string;  // ISO date
+}
+```
+
+### Buy credits
+
+Credits can be purchased in bundles via Stripe checkout.
+
+```typescript TypeScript
+const { data } = await commune.credits.checkout({
+  bundle: 'starter',  // 'starter' | 'growth' | 'scale'
+  success_url: 'https://yourapp.com/billing?success=1',
+  cancel_url: 'https://yourapp.com/billing',
+});
+
+// Redirect user to:
+console.log(data.checkout_url);
+console.log(data.credits);        // credits in bundle
+console.log(data.price);          // USD price
+```
+
+```bash REST
+POST /v1/credits/checkout
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "bundle": "starter"
+}
+```
+
+### List available bundles
+
+```bash REST
+GET /v1/credits/bundles
+Authorization: Bearer YOUR_API_KEY
+```
+
+Returns the available credit bundles and prices.
+
+<Note>
+Credit bundles can only be purchased through the Stripe checkout flow — the checkout URL must be opened in a browser. Credits are added to your account immediately after payment.
+</Note>
+
+---
+
+## Anti-spam limits
+
+Limits prevent agents from sending too much SMS. They're set per-org in the dashboard — **not configurable via the API**.
+
+**Defaults (all plans):**
+
+| Limit | Default |
+|---|---|
+| SMS per day, per number | 500 |
+| SMS per day, all numbers | 2,000 |
+| SMS per month | 20,000 |
+
+To change: **Dashboard → Phone → Settings**.
+
+When a limit is exceeded, the API returns `429`:
+
+```json
+{
+  "error": "sms_daily_limit_per_number",
+  "message": "This phone number has reached its daily limit of 500 messages. Resets at midnight UTC.",
+  "limit": 500,
+  "used": 500,
+  "resets_at": "midnight UTC"
+}
+```
+
+---
+
+## Suppressions
+
+When a recipient texts STOP, they're suppressed automatically. Sending to a suppressed number returns `422 recipient_suppressed`.
+
+```typescript
+// List suppressions for a number
+const { data: suppressions } = await commune.sms.listSuppressions({
+  phone_number_id: 'pn_abc123',
+});
+
+// Suppression object:
+// { id, orgId, phoneNumber, phoneNumberId, reason: 'stop' | 'blocked', createdAt }
+
+// Remove suppression (user opted back in via your app)
+await commune.sms.removeSuppression('+14155551234');
+```
+
+```bash REST
+# List suppressions
+GET /v1/sms/suppressions?phone_number_id=pn_abc123
+Authorization: Bearer YOUR_API_KEY
+
+# Remove a suppression (URI-encode the +)
+DELETE /v1/sms/suppressions/%2B14155551234
+Authorization: Bearer YOUR_API_KEY
+```
+
+---
+
+## API reference
+
+<AccordionGroup>
+
+<Accordion title="Phone Numbers endpoints">
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/phone-numbers/available` | Search available numbers |
+| `POST` | `/v1/phone-numbers` | Purchase a number |
+| `GET` | `/v1/phone-numbers` | List your numbers |
+| `GET` | `/v1/phone-numbers/:id` | Get a single number |
+| `PATCH` | `/v1/phone-numbers/:id` | Update friendly name, auto-reply, or webhook |
+| `DELETE` | `/v1/phone-numbers/:id` | Release a number |
+| `PUT` | `/v1/phone-numbers/:id/allow-list` | Replace the inbound allow-list |
+| `PUT` | `/v1/phone-numbers/:id/block-list` | Replace the inbound block-list |
+
+</Accordion>
+
+<Accordion title="SMS endpoints">
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/sms/send` | Send an SMS or MMS |
+| `GET` | `/v1/sms` | List messages (flat, newest-first) |
+| `GET` | `/v1/sms/conversations` | List conversations with cursor pagination |
+| `GET` | `/v1/sms/conversations/:number` | Get a conversation thread (requires `phone_number_id`) |
+| `GET` | `/v1/sms/search` | Semantic search (Business+) |
+| `GET` | `/v1/sms/suppressions` | List suppressed numbers |
+| `DELETE` | `/v1/sms/suppressions/:number` | Remove a suppression |
+
+</Accordion>
+
+<Accordion title="Credits endpoints">
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/v1/credits` | Get credit balance |
+| `POST` | `/v1/credits/checkout` | Start Stripe checkout to buy credits |
+| `GET` | `/v1/credits/bundles` | List available credit bundles |
+
+</Accordion>
+
+</AccordionGroup>
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="SMS Quickstart" icon="rocket" href="/quickstart-sms">
+  Buy a number and send your first SMS in under 5 minutes.
+</Card>
+
+<Card title="Phone Numbers" icon="phone" href="/phone/phone-numbers">
+  Manage numbers, allow lists, webhooks, and auto-replies.
+</Card>
+
+<Card title="SMS & MMS" icon="message" href="/phone/sms">
+  Two-way conversations, delivery tracking, and compliance.
+</Card>
+
+<Card title="Voice Agents" icon="microphone" href="/phone/voice-agents">
+  Add AI voice calling alongside SMS for your phone numbers.
+</Card>
+
+</Columns>

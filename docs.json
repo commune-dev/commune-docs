@@ -1,0 +1,310 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Commune",
+  "api": {
+    "mdx": {
+      "server": "https://api.commune.email",
+      "auth": {
+        "method": "bearer"
+      }
+    },
+    "playground": {
+      "display": "interactive"
+    }
+  },
+  "colors": {
+    "primary": "#57bf45",
+    "light": "#57bf45",
+    "dark": "#3d982e"
+  },
+  "favicon": "/logo/logo-icon-dark.svg",
+  "navigation": {
+    "anchors": [
+      {
+        "anchor": "Documentation",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "SDKs",
+            "pages": [
+              "SDKs/typescript",
+              "SDKs/python",
+              "SDKs/mcp",
+              "SDKs/rest-api"
+            ]
+          },
+          {
+            "group": "Email",
+            "pages": [
+              "features/messages",
+              "features/inboxes",
+              "features/threads",
+              "features/domains",
+              "features/webhooks",
+              "features/attachments",
+              "features/structured-extraction",
+              "features/delivery-monitoring",
+              "features/search",
+              "features/data-deletion"
+            ]
+          },
+          {
+            "group": "Commune OAuth",
+            "pages": [
+              "oauth/overview",
+              "oauth/how-it-works",
+              "oauth/quickstart",
+              "oauth/integration-guide",
+              "oauth/api-reference"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/overview",
+              "security/email-authentication",
+              "security/encryption",
+              "security/spam-prevention",
+              "security/prompt-injection",
+              "security/rate-limits"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/x402-payments",
+              "integrations/coding-agents",
+              "integrations/openclaw"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/support-agent",
+              "examples/churn-agent"
+            ]
+          },
+          {
+            "group": "Community",
+            "pages": [
+              "community/contributing"
+            ]
+          }
+        ]
+      },
+      {
+        "anchor": "API Reference",
+        "icon": "square-terminal",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/introduction",
+              "api-reference/authentication",
+              "api-reference/errors",
+              "api-reference/rate-limits"
+            ]
+          },
+          {
+            "group": "Messages",
+            "pages": [
+              "api-reference/messages/send",
+              "api-reference/messages/list",
+              "api-reference/messages/get"
+            ]
+          },
+          {
+            "group": "Inboxes",
+            "pages": [
+              "api-reference/inboxes/create",
+              "api-reference/inboxes/list",
+              "api-reference/inboxes/get",
+              "api-reference/inboxes/update"
+            ]
+          },
+          {
+            "group": "Threads",
+            "pages": [
+              "api-reference/threads/list",
+              "api-reference/threads/get"
+            ]
+          },
+          {
+            "group": "Attachments",
+            "pages": [
+              "api-reference/attachments/upload",
+              "api-reference/attachments/get"
+            ]
+          },
+          {
+            "group": "Domains",
+            "pages": [
+              "api-reference/domains/create",
+              "api-reference/domains/list",
+              "api-reference/domains/get",
+              "api-reference/domains/verify"
+            ]
+          },
+          {
+            "group": "Agent Auth",
+            "pages": [
+              "api-reference/agents/register",
+              "api-reference/agents/authenticate"
+            ]
+          },
+          {
+            "group": "Commune OAuth",
+            "pages": [
+              "api-reference/oauth/register-client",
+              "api-reference/oauth/send-code",
+              "api-reference/oauth/verify-code",
+              "api-reference/oauth/refresh-token",
+              "api-reference/oauth/get-agent-info",
+              "api-reference/oauth/revoke-token"
+            ]
+          }
+        ]
+      },
+      {
+        "anchor": "Knowledge Base",
+        "icon": "books",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "knowledge-base/introduction"
+            ]
+          },
+          {
+            "group": "Getting Started",
+            "pages": [
+              "knowledge-base/how-do-i-give-my-agent-an-email-address",
+              "knowledge-base/do-agents-need-own-email-infrastructure",
+              "knowledge-base/sending-without-custom-domain",
+              "knowledge-base/connecting-existing-email",
+              "knowledge-base/testing-agent-email",
+              "knowledge-base/pricing"
+            ]
+          },
+          {
+            "group": "Sending & Composing",
+            "pages": [
+              "knowledge-base/how-to-send-html-emails",
+              "knowledge-base/how-to-attach-files",
+              "knowledge-base/agent-email-signatures",
+              "knowledge-base/preventing-duplicate-sends"
+            ]
+          },
+          {
+            "group": "Deliverability",
+            "pages": [
+              "knowledge-base/how-to-prevent-agent-emails-from-spam",
+              "knowledge-base/how-to-warm-up-domain",
+              "knowledge-base/what-happens-if-agent-sends-too-many-emails",
+              "knowledge-base/batch-email-agents"
+            ]
+          },
+          {
+            "group": "Inbound & Threading",
+            "pages": [
+              "knowledge-base/how-to-handle-email-replies",
+              "knowledge-base/how-does-commune-thread-emails",
+              "knowledge-base/how-to-extract-structured-data",
+              "knowledge-base/per-agent-inboxes-multi-agent",
+              "knowledge-base/routing-between-agents"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "knowledge-base/monitoring-agent-email"
+            ]
+          },
+          {
+            "group": "Security & Compliance",
+            "pages": [
+              "knowledge-base/what-is-prompt-injection-via-email",
+              "knowledge-base/what-is-agent-authentication",
+              "knowledge-base/human-in-the-loop-approval",
+              "knowledge-base/preventing-data-leakage",
+              "knowledge-base/compliance-can-spam-gdpr",
+              "knowledge-base/what-if-agent-sends-wrong-email"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "knowledge-base/commune-with-langchain",
+              "knowledge-base/commune-with-openai-agents",
+              "knowledge-base/commune-with-crewai",
+              "knowledge-base/commune-with-n8n"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "logo": {
+    "dark": "/logo/communelogo-dark.png",
+    "light": "/logo/communelogo-light.png"
+  },
+  "feedback": {
+    "thumbsRating": true
+  },
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Get API Key",
+      "href": "https://commune.email/dashboard/api-keys"
+    },
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/shanjairaj7/commune"
+      },
+      {
+        "label": "Twitter",
+        "href": "https://x.com/shanjai_raj"
+      },
+      {
+        "label": "Support",
+        "href": "mailto:support@commune.email"
+      }
+    ]
+  },
+  "footerSocials": {
+    "github": "https://github.com/shanjairaj7/commune",
+    "x": "https://x.com/shanjai_raj"
+  },
+  "interaction": {
+    "drilldown": true
+  },
+  "metadata": {
+    "timestamp": true
+  },
+  "seo": {
+    "indexing": "all"
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "grok",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  }
+}

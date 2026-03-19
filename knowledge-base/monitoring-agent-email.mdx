@@ -1,0 +1,354 @@
+---
+title: How do I monitor what my agents are sending?
+description: Track delivery rates, bounce rates, and complaint rates across all your agent inboxes with webhooks, dashboards, and custom alerting.
+---
+
+## The short answer
+
+Commune gives you three layers of visibility: a dashboard with per-inbox metrics, webhook events for every email lifecycle event, and API endpoints to query delivery data programmatically. For production systems with multiple agents, build a monitoring webhook handler that tracks key metrics and fires alerts when something goes wrong.
+
+## The Commune dashboard
+
+Every inbox in the Commune dashboard shows real-time delivery health:
+
+- **Messages sent** — total outbound over the last 24h, 7d, 30d
+- **Delivery rate** — percentage of emails that reached the recipient's mail server
+- **Bounce rate** — hard bounces (invalid address) and soft bounces (mailbox full, temporary failure)
+- **Complaint rate** — recipients who marked your email as spam
+- **Warmup progress** — if the inbox is still warming up, current daily limit and utilization
+
+The dashboard is useful for quick checks. For automated monitoring, use webhooks.
+
+## Webhook lifecycle events
+
+Commune fires webhook events for every stage of an email's lifecycle. Subscribe to these on your inbox:
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.setWebhook(domainId, inboxId, {
+  endpoint: 'https://your-server.com/webhook/monitoring',
+  events: [
+    'email.sent',        // Email accepted by Commune
+    'email.delivered',   // Email accepted by recipient's mail server
+    'email.bounced',     // Email bounced (hard or soft)
+    'email.complained',  // Recipient marked as spam
+    'inbound',           // Reply received
+  ],
+});
+```
+
+```python Python
+client.inboxes.set_webhook(
+    domain_id=domain_id,
+    inbox_id=inbox_id,
+    endpoint="https://your-server.com/webhook/monitoring",
+    events=[
+        "email.sent",
+        "email.delivered",
+        "email.bounced",
+        "email.complained",
+        "inbound",
+    ],
+)
+```
+
+</CodeGroup>
+
+Each event includes the `message_id`, `inbox_id`, timestamp, and event-specific metadata. Bounce events include the bounce type and diagnostic code. Complaint events include the feedback type.
+
+## Building a monitoring handler
+
+Here's a webhook handler that tracks metrics per inbox and fires alerts when thresholds are exceeded:
+
+<CodeGroup>
+
+```typescript TypeScript
+import express from 'express';
+
+interface InboxMetrics {
+  sent: number;
+  delivered: number;
+  bounced: number;
+  complained: number;
+  lastEvent: string;
+}
+
+const metrics: Record<string, InboxMetrics> = {};
+
+function getMetrics(inboxId: string): InboxMetrics {
+  if (!metrics[inboxId]) {
+    metrics[inboxId] = {
+      sent: 0, delivered: 0, bounced: 0, complained: 0,
+      lastEvent: new Date().toISOString(),
+    };
+  }
+  return metrics[inboxId];
+}
+
+const app = express();
+app.use(express.json());
+
+app.post('/webhook/monitoring', async (req, res) => {
+  const { event, message_id, inbox_id, data } = req.body;
+  const m = getMetrics(inbox_id);
+  m.lastEvent = new Date().toISOString();
+
+  switch (event) {
+    case 'email.sent':
+      m.sent++;
+      break;
+
+    case 'email.delivered':
+      m.delivered++;
+      break;
+
+    case 'email.bounced':
+      m.bounced++;
+      const bounceRate = m.bounced / m.sent;
+      if (bounceRate > 0.05) {
+        await alert({
+          level: 'critical',
+          inbox: inbox_id,
+          message: `Bounce rate ${(bounceRate * 100).toFixed(1)}% exceeds 5% threshold`,
+          metric: { sent: m.sent, bounced: m.bounced },
+        });
+      }
+      break;
+
+    case 'email.complained':
+      m.complained++;
+      const complaintRate = m.complained / m.sent;
+      if (complaintRate > 0.001) {
+        await alert({
+          level: 'critical',
+          inbox: inbox_id,
+          message: `Complaint rate ${(complaintRate * 100).toFixed(3)}% exceeds 0.1% threshold`,
+          metric: { sent: m.sent, complained: m.complained },
+        });
+      }
+      break;
+  }
+
+  // Store for audit trail
+  await db.emailEvents.insert({
+    event,
+    message_id,
+    inbox_id,
+    data,
+    timestamp: new Date(),
+  });
+
+  res.json({ ok: true });
+});
+
+async function alert(payload: object) {
+  // Send to Slack, PagerDuty, email, etc.
+  await fetch(process.env.SLACK_WEBHOOK_URL!, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: JSON.stringify(payload, null, 2) }),
+  });
+}
+```
+
+```python Python
+from flask import Flask, request, jsonify
+from datetime import datetime
+from collections import defaultdict
+
+app = Flask(__name__)
+
+metrics = defaultdict(lambda: {
+    "sent": 0, "delivered": 0, "bounced": 0,
+    "complained": 0, "last_event": None,
+})
+
+@app.post("/webhook/monitoring")
+def monitoring_webhook():
+    payload = request.json
+    event = payload["event"]
+    inbox_id = payload["inbox_id"]
+    message_id = payload["message_id"]
+
+    m = metrics[inbox_id]
+    m["last_event"] = datetime.utcnow().isoformat()
+
+    if event == "email.sent":
+        m["sent"] += 1
+
+    elif event == "email.delivered":
+        m["delivered"] += 1
+
+    elif event == "email.bounced":
+        m["bounced"] += 1
+        bounce_rate = m["bounced"] / m["sent"]
+        if bounce_rate > 0.05:
+            alert(
+                level="critical",
+                inbox=inbox_id,
+                message=f"Bounce rate {bounce_rate:.1%} exceeds 5% threshold",
+            )
+
+    elif event == "email.complained":
+        m["complained"] += 1
+        complaint_rate = m["complained"] / m["sent"]
+        if complaint_rate > 0.001:
+            alert(
+                level="critical",
+                inbox=inbox_id,
+                message=f"Complaint rate {complaint_rate:.3%} exceeds 0.1% threshold",
+            )
+
+    # Store for audit trail
+    db.email_events.insert_one({
+        "event": event,
+        "message_id": message_id,
+        "inbox_id": inbox_id,
+        "data": payload.get("data"),
+        "timestamp": datetime.utcnow(),
+    })
+
+    return jsonify({"ok": True})
+```
+
+</CodeGroup>
+
+## Key metrics and thresholds
+
+These are the numbers that matter. If you track nothing else, track these:
+
+| Metric | Healthy | Warning | Critical | Why it matters |
+|--------|---------|---------|----------|----------------|
+| Delivery rate | > 98% | 95-98% | < 95% | Below 95% means something is wrong with your list or content |
+| Bounce rate | < 2% | 2-5% | > 5% | High bounces damage sender reputation fast |
+| Complaint rate | < 0.05% | 0.05-0.1% | > 0.1% | ESPs will throttle or block you above 0.1% |
+| Response time | < 60s | 60-300s | > 300s | Slow agent replies frustrate users and hurt engagement |
+
+<Warning>
+A complaint rate above 0.1% is an emergency. Gmail and Outlook will start filtering all your email to spam. If you see this, pause sending from the affected inbox immediately and investigate.
+</Warning>
+
+## Audit logging pattern
+
+For compliance and debugging, store every outbound email with enough context to reconstruct what happened:
+
+```typescript TypeScript
+interface EmailAuditLog {
+  message_id: string;
+  inbox_id: string;
+  agent_id: string;         // Which agent sent this
+  to: string;
+  subject: string;
+  thread_id: string;
+  context: string;          // Why the agent sent this email
+  outcome: 'sent' | 'delivered' | 'bounced' | 'complained';
+  outcome_detail?: string;  // Bounce code, complaint type
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Log on send
+async function sendWithAudit(params: SendParams, agentId: string, context: string) {
+  const sent = await commune.messages.send(params);
+
+  await db.auditLogs.insert({
+    message_id: sent.id,
+    inbox_id: params.inboxId,
+    agent_id: agentId,
+    to: params.to,
+    subject: params.subject,
+    thread_id: sent.thread_id,
+    context,
+    outcome: 'sent',
+    created_at: new Date(),
+    updated_at: new Date(),
+  });
+
+  return sent;
+}
+
+// Update on delivery/bounce/complaint webhook
+async function updateAudit(messageId: string, outcome: string, detail?: string) {
+  await db.auditLogs.updateOne(
+    { message_id: messageId },
+    { $set: { outcome, outcome_detail: detail, updated_at: new Date() } },
+  );
+}
+```
+
+The `context` field is the most valuable one for debugging. When an agent sends an email, record why: "Replying to support ticket", "Sending follow-up after 24h no response", "Escalation to manager". Six months from now when you're investigating a complaint, this field tells you what the agent was thinking.
+
+## Health checks across all inboxes
+
+If you're running multiple agent inboxes, run a periodic health check:
+
+<CodeGroup>
+
+```typescript TypeScript
+async function dailyHealthReport() {
+  const { data: inboxes } = await commune.inboxes.list();
+  const issues: string[] = [];
+
+  for (const inbox of inboxes) {
+    const { health } = inbox;
+
+    if (health.bounceRate > 0.03) {
+      issues.push(`${inbox.address}: bounce rate ${(health.bounceRate * 100).toFixed(1)}%`);
+    }
+    if (health.complaintRate > 0.0005) {
+      issues.push(`${inbox.address}: complaint rate ${(health.complaintRate * 100).toFixed(3)}%`);
+    }
+    if (health.deliveryRate < 0.95) {
+      issues.push(`${inbox.address}: delivery rate ${(health.deliveryRate * 100).toFixed(1)}%`);
+    }
+  }
+
+  if (issues.length > 0) {
+    await sendSlackAlert(`Daily email health report:\n${issues.join('\n')}`);
+  }
+}
+```
+
+```python Python
+async def daily_health_report():
+    inboxes = client.inboxes.list()
+    issues = []
+
+    for inbox in inboxes.data:
+        health = inbox.health
+
+        if health.bounce_rate > 0.03:
+            issues.append(f"{inbox.address}: bounce rate {health.bounce_rate:.1%}")
+        if health.complaint_rate > 0.0005:
+            issues.append(f"{inbox.address}: complaint rate {health.complaint_rate:.3%}")
+        if health.delivery_rate < 0.95:
+            issues.append(f"{inbox.address}: delivery rate {health.delivery_rate:.1%}")
+
+    if issues:
+        await send_slack_alert(f"Daily email health report:\n" + "\n".join(issues))
+```
+
+</CodeGroup>
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Full delivery monitoring API reference and dashboard guide.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Webhook event types, payload schemas, and signature verification.
+</Card>
+
+<Card title="What happens if my agent sends too many emails?" icon="gauge-high" href="/knowledge-base/what-happens-if-agent-sends-too-many-emails">
+  Rate limits, burst detection, and automatic reputation protection.
+</Card>
+
+<Card title="Per-agent inboxes" icon="users" href="/knowledge-base/per-agent-inboxes-multi-agent">
+  Isolate reputation per agent so one bad sender doesn't take down the rest.
+</Card>
+
+</Columns>

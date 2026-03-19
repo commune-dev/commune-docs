@@ -1,0 +1,117 @@
+---
+title: "Authentication"
+description: "All Commune API requests are authenticated with an API key passed as a Bearer token."
+---
+
+## API keys
+
+Commune API keys use the prefix `comm_` followed by a 64-character hex string. Every key is scoped to a single organization.
+
+Example key format:
+
+```
+comm_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+```
+
+Keys are shown **once** at creation time. If you lose a key, revoke it and generate a new one.
+
+## Get an API key
+
+Create and manage API keys in the dashboard:
+
+[https://commune.email/dashboard/api-keys](https://commune.email/dashboard/api-keys)
+
+## Sending requests
+
+Pass your API key in the `Authorization` header as a Bearer token on every request:
+
+```
+Authorization: Bearer comm_your_api_key_here
+```
+
+<Warning>
+  Never commit API keys to version control. Use environment variables or a secrets manager. If a key is exposed, revoke it immediately from the dashboard.
+</Warning>
+
+## Code examples
+
+<CodeGroup>
+
+```typescript TypeScript
+import Commune from 'commune-ai';
+
+const client = new Commune({
+  apiKey: process.env.COMMUNE_API_KEY, // comm_...
+});
+
+// The SDK attaches the Authorization header on every request automatically.
+const messages = await client.messages.list();
+```
+
+```python Python
+from commune import Commune
+import os
+
+client = Commune(api_key=os.environ["COMMUNE_API_KEY"])  # comm_...
+
+# The SDK attaches the Authorization header on every request automatically.
+messages = client.messages.list()
+```
+
+```json MCP Config
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+```bash cURL
+curl https://api.commune.email/v1/messages \
+  -H "Authorization: Bearer comm_your_api_key_here"
+```
+
+```bash CLI
+# Set once in your shell profile
+export COMMUNE_API_KEY=comm_your_api_key_here
+
+# The CLI picks it up automatically
+commune messages list
+```
+
+</CodeGroup>
+
+## Key permissions
+
+Each API key carries a `permissions` array. Keys created from the dashboard default to `["read", "write"]`. You can restrict a key to read-only access when creating it — useful for analytics pipelines or monitoring agents that should not be able to send email or SMS.
+
+| Permission | Allowed operations |
+| --- | --- |
+| `read` | List and retrieve messages, inboxes, threads, domains, phone numbers, SMS, credits |
+| `write` | Send email, send SMS, create inboxes, create domains, purchase phone numbers, manage credits |
+
+The API returns `403 Forbidden` if you attempt an operation your key does not have permission for.
+
+## x402 wallet auth (alternative)
+
+Instead of API keys, you can authenticate and pay per call using a crypto wallet. Your agent sends a `PAYMENT-SIGNATURE` header with each request — no API key or subscription needed.
+
+The wallet address becomes your identity. First payment auto-provisions an org.
+
+See the full guide: [x402 Payments](/integrations/x402-payments)
+
+## Security best practices
+
+- Store keys in environment variables, never in source code
+- Use separate keys for separate environments (development, staging, production)
+- Rotate keys periodically — old keys can be revoked without downtime since new keys are immediately valid
+- Grant only the permissions each agent needs — a read-only monitoring agent does not need `write`
+- If a key is accidentally exposed, revoke it immediately from the dashboard and issue a new one
+
+[Next: Error handling →](/api-reference/errors)

@@ -1,0 +1,185 @@
+---
+title: "List SMS Messages"
+api: "GET /v1/sms"
+description: "List SMS and MMS messages for your organization, optionally filtered by phone number."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const messages = await commune.sms.list({
+  phoneNumberId: 'pn_01abc123',
+  limit: 20,
+});
+
+for (const msg of messages) {
+  console.log(msg.message_id, msg.direction, msg.content);
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+messages = client.sms.list(
+    phone_number_id="pn_01abc123",
+    limit=20,
+)
+
+for msg in messages:
+    print(msg.message_id, msg.direction, msg.content)
+```
+```bash MCP
+list_sms_messages(
+  phone_number_id="pn_01abc123",
+  limit=20
+)
+```
+```bash cURL
+curl "https://api.commune.email/v1/sms?phone_number_id=pn_01abc123&limit=20" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune sms list --phone-number-id pn_01abc123
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "message_id": "sms_SMabc123def456",
+      "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+      "direction": "outbound",
+      "content": "Hello from your AI agent!",
+      "created_at": "2026-02-25T10:00:00.000Z",
+      "metadata": {
+        "delivery_status": "delivered",
+        "from_number": "+18005550001",
+        "to_number": "+14155559999",
+        "phone_number_id": "pn_01abc123",
+        "message_sid": "SMabc123def456",
+        "credits_charged": 2,
+        "sms_segments": 1,
+        "has_attachments": false,
+        "mms_media": null,
+        "delivery_data": {
+          "sent_at": "2026-02-25T10:00:01.000Z",
+          "delivered_at": "2026-02-25T10:00:03.000Z"
+        }
+      }
+    },
+    {
+      "message_id": "sms_SMxyz987",
+      "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+      "direction": "inbound",
+      "content": "Got it, thanks!",
+      "created_at": "2026-02-25T10:05:00.000Z",
+      "metadata": {
+        "delivery_status": "delivered",
+        "from_number": "+14155559999",
+        "to_number": "+18005550001",
+        "phone_number_id": "pn_01abc123",
+        "message_sid": "SMxyz987",
+        "credits_charged": 1,
+        "sms_segments": 1,
+        "has_attachments": false,
+        "mms_media": null,
+        "delivery_data": null
+      }
+    }
+  ]
+}
+```
+</ResponseExample>
+
+## Query Parameters
+
+<ParamField query="phone_number_id" type="string">
+  Filter messages to a specific phone number. Format: `pn_...`. If omitted, returns messages across all phone numbers in your organization.
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Maximum number of messages to return. Maximum: 100.
+</ParamField>
+
+<ParamField query="before" type="string">
+  Cursor for pagination. Returns messages created before this message ID or timestamp.
+</ParamField>
+
+<ParamField query="after" type="string">
+  Cursor for pagination. Returns messages created after this message ID or timestamp.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="SmsMessage[]">
+  Array of messages in descending chronological order (newest first).
+
+  <Expandable title="SmsMessage properties" defaultOpen>
+    <ResponseField name="message_id" type="string">
+      Unique message ID. Format: `sms_SM...`
+    </ResponseField>
+    <ResponseField name="thread_id" type="string">
+      Conversation thread ID (32 hex characters).
+    </ResponseField>
+    <ResponseField name="direction" type="string">
+      One of: `inbound`, `outbound`.
+    </ResponseField>
+    <ResponseField name="content" type="string | null">
+      Message body text.
+    </ResponseField>
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp when the message was created.
+    </ResponseField>
+    <ResponseField name="metadata" type="object">
+      <Expandable title="properties">
+        <ResponseField name="delivery_status" type="string | null">
+          One of: `queued`, `sent`, `delivered`, `failed`, `undelivered`, `received`, `blocked`, `credit_limit`.
+        </ResponseField>
+        <ResponseField name="from_number" type="string | null">
+          Sender phone number in E.164 format.
+        </ResponseField>
+        <ResponseField name="to_number" type="string | null">
+          Recipient phone number in E.164 format.
+        </ResponseField>
+        <ResponseField name="phone_number_id" type="string | null">
+          ID of the Commune phone number involved.
+        </ResponseField>
+        <ResponseField name="message_sid" type="string | null">
+          Raw Twilio message SID.
+        </ResponseField>
+        <ResponseField name="credits_charged" type="number | null">
+          Credits deducted for this message.
+        </ResponseField>
+        <ResponseField name="sms_segments" type="number | null">
+          Number of SMS segments.
+        </ResponseField>
+        <ResponseField name="has_attachments" type="boolean">
+          Whether this message contains MMS media attachments.
+        </ResponseField>
+        <ResponseField name="mms_media" type="object[] | null">
+          Array of MMS media objects, if present.
+          <Expandable title="properties">
+            <ResponseField name="url" type="string">Original Twilio media URL.</ResponseField>
+            <ResponseField name="contentType" type="string">MIME type (e.g., `image/jpeg`).</ResponseField>
+            <ResponseField name="storageUrl" type="string | undefined">Commune-hosted copy URL.</ResponseField>
+            <ResponseField name="attachmentId" type="string | undefined">Attachment ID for download.</ResponseField>
+          </Expandable>
+        </ResponseField>
+        <ResponseField name="delivery_data" type="object | null">
+          Delivery timestamps.
+          <Expandable title="properties">
+            <ResponseField name="sent_at" type="string | undefined">ISO 8601 timestamp.</ResponseField>
+            <ResponseField name="delivered_at" type="string | undefined">ISO 8601 timestamp.</ResponseField>
+            <ResponseField name="failed_at" type="string | undefined">ISO 8601 timestamp.</ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>

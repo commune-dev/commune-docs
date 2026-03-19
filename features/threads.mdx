@@ -1,0 +1,316 @@
+---
+title: Threads
+description: Conversation threading with automatic grouping, triage status, tags, and assignment for AI agents.
+---
+
+Commune groups related emails into threads automatically using email headers and routing tokens. Your agent can list threads, read messages, and manage triage metadata (status, tags, assignment).
+
+## List threads
+
+<CodeGroup>
+
+```typescript TypeScript
+const { data: threads, next_cursor, has_more } = await commune.threads.list({
+  inbox_id: 'inbox_abc',
+  limit: 20,
+  order: 'desc',
+});
+
+for (const thread of threads) {
+  console.log(`${thread.subject} — ${thread.message_count} messages`);
+}
+
+// Next page
+if (has_more) {
+  const page2 = await commune.threads.list({
+    inbox_id: 'inbox_abc',
+    cursor: next_cursor,
+  });
+}
+```
+
+```python Python
+result = client.threads.list(inbox_id="inbox_abc", limit=20)
+
+for thread in result.data:
+    print(f"{thread.subject} — {thread.message_count} messages")
+
+# Next page
+if result.has_more:
+    page2 = client.threads.list(
+        inbox_id="inbox_abc",
+        cursor=result.next_cursor,
+    )
+```
+
+```bash MCP
+list_threads(inbox_id="inbox_abc", limit=20, order="desc")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/threads?inbox_id=inbox_abc&limit=20&order=desc" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `inbox_id` | `string` | No* | Filter by inbox (recommended) |
+| `domain_id` | `string` | No* | Filter by domain |
+| `limit` | `number` | No | Results per page (1–100, default 20) |
+| `cursor` | `string` | No | Pagination cursor from previous response |
+| `order` | `string` | No | `desc` (newest first, default) or `asc` |
+
+<Note>At least one of `inbox_id` or `domain_id` is required.</Note>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "thread_id": "thread_abc123",
+      "subject": "Order #1234 — shipping update",
+      "last_message_at": "2026-02-14T10:30:00Z",
+      "first_message_at": "2026-02-13T09:00:00Z",
+      "message_count": 4,
+      "snippet": "Your package has been shipped and will arrive...",
+      "last_direction": "inbound",
+      "inbox_id": "inbox_abc",
+      "domain_id": "d_abc",
+      "has_attachments": true
+    }
+  ],
+  "next_cursor": "eyJ0IjoiMjAyNi0wMi...",
+  "has_more": true
+}
+```
+
+### Thread object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `thread_id` | `string` | Unique thread identifier |
+| `subject` | `string \| null` | Email subject of the first message |
+| `last_message_at` | `string` | ISO timestamp of the most recent message |
+| `first_message_at` | `string \| null` | ISO timestamp of the first message |
+| `message_count` | `number` | Total messages in the thread |
+| `snippet` | `string \| null` | Preview of the latest message content |
+| `last_direction` | `"inbound" \| "outbound" \| null` | Direction of the last message |
+| `inbox_id` | `string \| null` | Inbox this thread belongs to |
+| `domain_id` | `string \| null` | Domain this thread belongs to |
+| `has_attachments` | `boolean` | Whether any message has attachments |
+
+---
+
+## Get thread messages
+
+Read all messages in a conversation, ordered chronologically.
+
+<CodeGroup>
+
+```typescript TypeScript
+const messages = await commune.threads.messages('thread_abc123', {
+  limit: 50,
+  order: 'asc',  // oldest first
+});
+
+for (const msg of messages) {
+  const sender = msg.participants.find(p => p.role === 'sender');
+  console.log(`${sender?.identity}: ${msg.content.slice(0, 100)}`);
+}
+```
+
+```python Python
+messages = client.threads.messages("thread_abc123", order="asc")
+
+for msg in messages:
+    sender = next(p.identity for p in msg.participants if p.role == "sender")
+    print(f"{sender}: {msg.content[:100]}")
+```
+
+```bash MCP
+get_thread_messages(thread_id="thread_abc123", limit=50, order="asc")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/threads/thread_abc123/messages?limit=50&order=asc" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `thread_id` | `string` | Yes | Thread ID (path parameter) |
+| `limit` | `number` | No | Max messages (1–1000, default 50) |
+| `order` | `string` | No | `asc` (oldest first, default) or `desc` |
+
+### Response
+
+Returns an array of [Message objects](/features/messages#message-object-fields).
+
+---
+
+## Thread triage
+
+Commune provides built-in triage primitives — status, tags, and assignment — so your agent can organize conversations without an external ticketing system.
+
+### Get triage metadata
+
+<CodeGroup>
+
+```typescript TypeScript
+// Via REST API
+const res = await fetch(`https://api.commune.email/v1/threads/${threadId}/metadata`, {
+  headers: { Authorization: `Bearer ${apiKey}` },
+});
+const { data } = await res.json();
+// { thread_id, tags: ["urgent"], status: "open", assigned_to: "agent-1" }
+```
+
+```python Python
+# Via REST API
+import requests
+resp = requests.get(
+    f"https://api.commune.email/v1/threads/{thread_id}/metadata",
+    headers={"Authorization": f"Bearer {api_key}"},
+)
+meta = resp.json()["data"]
+```
+
+```bash MCP
+get_thread_metadata(thread_id="thread_abc123")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/threads/thread_abc123/metadata" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Set thread status
+
+Valid statuses: `open`, `needs_reply`, `waiting`, `closed`
+
+<CodeGroup>
+
+```bash MCP
+set_thread_status(thread_id="thread_abc123", status="needs_reply")
+```
+
+```bash cURL
+curl -X PUT "https://api.commune.email/v1/threads/thread_abc123/status" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"status": "needs_reply"}'
+```
+
+</CodeGroup>
+
+### Add tags
+
+Tags are additive — existing tags are preserved.
+
+<CodeGroup>
+
+```bash MCP
+tag_thread(thread_id="thread_abc123", tags="urgent,vip,billing")
+```
+
+```bash cURL
+curl -X POST "https://api.commune.email/v1/threads/thread_abc123/tags" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"tags": ["urgent", "vip", "billing"]}'
+```
+
+</CodeGroup>
+
+### Remove tags
+
+<CodeGroup>
+
+```bash MCP
+untag_thread(thread_id="thread_abc123", tags="urgent")
+```
+
+```bash cURL
+curl -X DELETE "https://api.commune.email/v1/threads/thread_abc123/tags" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"tags": ["urgent"]}'
+```
+
+</CodeGroup>
+
+### Assign a thread
+
+Assign to an agent or user identifier. Pass `null` to unassign.
+
+<CodeGroup>
+
+```bash MCP
+assign_thread(thread_id="thread_abc123", assigned_to="agent-billing-v2")
+```
+
+```bash cURL
+curl -X PUT "https://api.commune.email/v1/threads/thread_abc123/assign" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"assigned_to": "agent-billing-v2"}'
+```
+
+</CodeGroup>
+
+### Triage metadata object
+
+```json
+{
+  "data": {
+    "thread_id": "thread_abc123",
+    "tags": ["urgent", "vip", "billing"],
+    "status": "needs_reply",
+    "assigned_to": "agent-billing-v2"
+  }
+}
+```
+
+## How threading works
+
+Commune resolves threads using a priority chain:
+
+1. **Plus-address routing token** — Opaque HMAC tokens in `Reply-To` headers (e.g., `inbox+r.dGhyZWFk.sig@domain.com`) map directly to a thread ID
+2. **Database lookup** — SMTP `In-Reply-To` and `References` headers are matched against stored message IDs
+3. **SMTP header fallback** — Standard email threading headers are used if no match is found
+4. **New thread** — If no existing thread matches, a new one is created
+
+This means your agent's replies are always correctly threaded, even when email clients rewrite headers.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Send emails and list messages with full parameter reference.
+</Card>
+
+<Card title="Search" icon="magnifying-glass" href="/features/search">
+  Search across threads by subject, content, or semantic meaning.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Receive inbound emails and reply within the correct thread.
+</Card>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Automatically extract structured data from emails in threads.
+</Card>
+
+</Columns>

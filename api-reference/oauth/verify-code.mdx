@@ -1,0 +1,112 @@
+---
+title: "Verify Code"
+api: "POST /oauth/verify-code"
+description: "Verify the 6-digit code and receive the agent's identity, access token, and refresh token. Step 2 of the sign-in flow."
+---
+
+<Note>
+Authenticate with HTTP Basic Auth: `Authorization: Basic base64(client_id:client_secret)`
+</Note>
+
+<RequestExample>
+```typescript TypeScript
+const credentials = Buffer.from(
+  `${CLIENT_ID}:${CLIENT_SECRET}`
+).toString('base64');
+
+const response = await fetch('https://api.commune.email/oauth/verify-code', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Basic ${credentials}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    request_id: 'otpreq_a1b2c3d4e5f6...',
+    code: '482931',
+  }),
+});
+
+const { agent_id, access_token, refresh_token, id_token } = await response.json();
+// Store agent_id in your database as the permanent identifier
+```
+```python Python
+resp = httpx.post(
+    'https://api.commune.email/oauth/verify-code',
+    headers={
+        'Authorization': f'Basic {credentials}',
+        'Content-Type': 'application/json',
+    },
+    json={
+        'request_id': 'otpreq_a1b2c3d4e5f6...',
+        'code': '482931',
+    },
+)
+
+data = resp.json()
+# Store data['agent_id'] in your database
+```
+```bash cURL
+curl -X POST https://api.commune.email/oauth/verify-code \
+  -H "Authorization: Basic $(echo -n 'comm_client_xxx:comm_secret_xxx' | base64)" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id": "otpreq_a1b2c3d4e5f6...", "code": "482931"}'
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{
+  "access_token": "comm_oauth_a1b2c3d4...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "comm_refresh_e5f6g7h8...",
+  "id_token": "eyJhbGciOiJIUzI1NiIs...",
+  "agent_id": "agt_4f3a9b2c1d7e8a9b",
+  "scope": "identity"
+}
+```
+</ResponseExample>
+
+### Body
+
+<ParamField body="request_id" type="string" required>
+  From the `POST /oauth/send-code` response.
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  The 6-digit code the agent read from their inbox.
+</ParamField>
+
+### Response
+
+<ResponseField name="agent_id" type="string">
+  The agent's permanent, unique ID. Store this in your database — it never changes. Same concept as Google's `sub` field.
+</ResponseField>
+
+<ResponseField name="access_token" type="string">
+  Use to call `GET /oauth/agentinfo`. Expires in 1 hour.
+</ResponseField>
+
+<ResponseField name="refresh_token" type="string">
+  Use to get a new access token via `POST /oauth/token`. Expires in 30 days. Single-use — each refresh gives a new one.
+</ResponseField>
+
+<ResponseField name="id_token" type="string">
+  Signed JWT with agent claims. Can be decoded locally without calling Commune.
+</ResponseField>
+
+<ResponseField name="expires_in" type="number">
+  Access token lifetime in seconds (3600 = 1 hour).
+</ResponseField>
+
+<ResponseField name="scope" type="string">
+  Always `"identity"`.
+</ResponseField>
+
+### Errors
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| `invalid_code` | 401 | Wrong code, expired, or already used. Each code works once. |
+| `agent_inactive` | 403 | Agent account has been suspended. |
+| `origin_not_allowed` | 403 | Request domain doesn't match your registered `websiteUrl`. |

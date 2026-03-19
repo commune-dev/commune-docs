@@ -1,0 +1,138 @@
+---
+title: "Get inbox"
+api: "GET /v1/domains/:domainId/inboxes/:inboxId"
+description: "Retrieve a single inbox by domain and inbox ID."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const inbox = await commune.inboxes.get('3d4f5a6b-7c8d-9e0f-a1b2-c3d4e5f6a7b8');
+
+console.log(inbox.data.address);      // support@mycompany.com
+console.log(inbox.data.displayName);  // Support Agent
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+inbox = client.inboxes.get("3d4f5a6b-7c8d-9e0f-a1b2-c3d4e5f6a7b8")
+
+print(inbox.data.address)
+```
+```bash MCP
+get_inbox(id="3d4f5a6b-7c8d-9e0f-a1b2-c3d4e5f6a7b8")
+```
+```bash cURL
+curl "https://api.commune.email/v1/domains/domain_xyz789/inboxes/3d4f5a6b-7c8d-9e0f-a1b2-c3d4e5f6a7b8" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune inboxes get 3d4f5a6b-7c8d-9e0f-a1b2-c3d4e5f6a7b8
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "id": "3d4f5a6b-7c8d-9e0f-a1b2-c3d4e5f6a7b8",
+    "localPart": "support",
+    "address": "support@mycompany.com",
+    "displayName": "Support Agent",
+    "agent": {
+      "name": "Support Agent"
+    },
+    "webhook": {
+      "endpoint": "https://myapp.com/webhooks/email",
+      "events": ["inbound"],
+      "secret": "whsec_abc123..."
+    },
+    "status": "active",
+    "createdAt": "2026-02-25T10:00:00.000Z"
+  }
+}
+```
+```json 404 Not Found
+{
+  "error": "Inbox not found"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="domainId" type="string" required>
+  The domain ID the inbox belongs to.
+</ParamField>
+
+<ParamField path="inboxId" type="string" required>
+  The inbox ID (UUID) to retrieve.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Unique inbox identifier (UUID).
+    </ResponseField>
+    <ResponseField name="localPart" type="string">
+      The local part of the inbox address (before `@`).
+    </ResponseField>
+    <ResponseField name="address" type="string">
+      Full email address of the inbox.
+    </ResponseField>
+    <ResponseField name="displayName" type="string">
+      Display name shown in outbound `From` headers.
+    </ResponseField>
+    <ResponseField name="agent" type="object">
+      <Expandable title="properties">
+        <ResponseField name="name" type="string">Agent name.</ResponseField>
+        <ResponseField name="id" type="string">Agent ID, if linked to an agent identity.</ResponseField>
+        <ResponseField name="metadata" type="object">Arbitrary agent metadata.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="webhook" type="object">
+      <Expandable title="properties">
+        <ResponseField name="endpoint" type="string">Webhook endpoint URL for inbound email events.</ResponseField>
+        <ResponseField name="events" type="string[]">Event types subscribed to.</ResponseField>
+        <ResponseField name="secret" type="string">HMAC signing secret for payload verification.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="extractionSchema" type="object">
+      Structured extraction configuration when enabled.
+
+      <Expandable title="properties">
+        <ResponseField name="name" type="string">Schema name.</ResponseField>
+        <ResponseField name="description" type="string">Optional schema description.</ResponseField>
+        <ResponseField name="schema" type="object">JSON Schema object defining the fields to extract.</ResponseField>
+        <ResponseField name="enabled" type="boolean">Whether extraction is currently active.</ResponseField>
+      </Expandable>
+
+      <Note>Structured extraction requires the **Business** plan or higher.</Note>
+    </ResponseField>
+    <ResponseField name="limits" type="object">
+      <Expandable title="properties">
+        <ResponseField name="emailsPerDay" type="number">Daily outbound email limit for this inbox.</ResponseField>
+        <ResponseField name="emailsPerHour" type="number">Hourly outbound email limit for this inbox.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Inbox status.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 creation timestamp.
+    </ResponseField>
+  </Expandable>
+</ResponseField>

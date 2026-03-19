@@ -1,0 +1,102 @@
+---
+title: "Get Credit Balance"
+api: "GET /v1/credits"
+description: "Retrieve your current credit balance, including included plan credits and purchased add-on credits."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const balance = await commune.credits.get();
+
+console.log(`Total: ${balance.total} credits`);
+console.log(`Included: ${balance.included}`);
+console.log(`Purchased: ${balance.purchased}`);
+console.log(`Used this cycle: ${balance.usedThisCycle}`);
+console.log(`Resets at: ${balance.cycleResetAt}`);
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+balance = client.credits.get()
+
+print(f"Total: {balance.total} credits")
+print(f"Included: {balance.included}")
+print(f"Purchased: {balance.purchased}")
+print(f"Used this cycle: {balance.used_this_cycle}")
+print(f"Resets at: {balance.cycle_reset_at}")
+```
+```bash MCP
+get_credit_balance()
+```
+```bash cURL
+curl https://api.commune.email/v1/credits \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune credits get
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "included": 500,
+    "purchased": 1250,
+    "total": 1750,
+    "usedThisCycle": 320,
+    "cycleResetAt": "2026-03-01T00:00:00.000Z"
+  }
+}
+```
+</ResponseExample>
+
+## Response
+
+<ResponseField name="data" type="object">
+  Your current credit balance.
+
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="included" type="number">
+      Credits from your monthly plan. Resets to your plan's included amount on each billing cycle reset. Does not roll over.
+    </ResponseField>
+    <ResponseField name="purchased" type="number">
+      Credits from purchased add-on bundles. Rolls over month-to-month and does not expire.
+    </ResponseField>
+    <ResponseField name="total" type="number">
+      Total available credits (`included + purchased`). This is the number checked before each SMS send or phone number purchase.
+    </ResponseField>
+    <ResponseField name="usedThisCycle" type="number">
+      Total credits consumed since the last billing cycle reset. Useful for analytics and budgeting.
+    </ResponseField>
+    <ResponseField name="cycleResetAt" type="string">
+      ISO 8601 timestamp of the next billing cycle reset. On this date, `included` credits are restored to your plan's monthly allocation.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+**Monthly included credits by plan:**
+- Free: 200 credits/month
+- Agent Pro: 500 credits/month
+- Business: 5,000 credits/month
+- Enterprise: Unlimited
+
+Included credits reset monthly. Purchased credits roll over indefinitely.
+</Note>
+
+**Credit costs at a glance:**
+
+| Operation | Credits |
+|-----------|---------|
+| US/CA outbound SMS (per segment) | 2 |
+| US/CA outbound MMS | 5 |
+| US/CA inbound SMS | 1 |
+| Phone number rental | 150/month (prorated) |
+| Other countries | varies — see [Send SMS](/api-reference/sms/send) |

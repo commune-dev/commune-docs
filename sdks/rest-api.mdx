@@ -1,0 +1,192 @@
+---
+title: REST API
+description: Direct HTTP access to every Commune endpoint. Use from any language.
+---
+
+## Base URL
+
+```
+https://api.commune.email
+```
+
+All endpoints are under the `/v1` prefix.
+
+## Authentication
+
+Include your API key as a Bearer token in every request:
+
+```bash
+curl https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_your_api_key"
+```
+
+## Endpoints overview
+
+### Messages
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/messages/send` | Send an email |
+| `GET` | `/v1/messages` | List messages (requires `inbox_id`, `domain_id`, or `sender`) |
+
+### Inboxes
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/inboxes` | Create inbox (domain auto-resolved) |
+| `GET` | `/v1/inboxes` | List all inboxes across domains |
+| `GET` | `/v1/domains/:domainId/inboxes` | List inboxes for a domain |
+| `POST` | `/v1/domains/:domainId/inboxes` | Create inbox on specific domain |
+| `GET` | `/v1/domains/:domainId/inboxes/:inboxId` | Get inbox details |
+| `PUT` | `/v1/domains/:domainId/inboxes/:inboxId` | Update inbox |
+| `DELETE` | `/v1/domains/:domainId/inboxes/:inboxId` | Delete inbox |
+| `PUT` | `/v1/domains/:domainId/inboxes/:inboxId/extraction-schema` | Set structured extraction schema |
+| `DELETE` | `/v1/domains/:domainId/inboxes/:inboxId/extraction-schema` | Remove structured extraction schema |
+
+### Threads
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/threads` | List threads (requires `inbox_id` or `domain_id`) |
+| `GET` | `/v1/threads/:threadId/messages` | Get messages in a thread |
+| `GET` | `/v1/threads/:threadId/metadata` | Get thread triage metadata |
+| `PUT` | `/v1/threads/:threadId/status` | Set thread status |
+| `POST` | `/v1/threads/:threadId/tags` | Add tags |
+| `DELETE` | `/v1/threads/:threadId/tags` | Remove tags |
+| `PUT` | `/v1/threads/:threadId/assign` | Assign thread |
+
+### Domains
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/domains` | List domains |
+| `POST` | `/v1/domains` | Create a domain |
+| `GET` | `/v1/domains/:domainId` | Get domain details |
+| `POST` | `/v1/domains/:domainId/verify` | Trigger DNS verification |
+| `GET` | `/v1/domains/:domainId/records` | Get DNS records |
+
+### Attachments
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/attachments/upload` | Upload attachment (base64) |
+| `GET` | `/v1/attachments/:attachmentId` | Get attachment metadata |
+| `GET` | `/v1/attachments/:attachmentId/url` | Get download URL |
+
+### Delivery & Monitoring
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/delivery/metrics` | Delivery metrics (requires `inbox_id` or `domain_id`) |
+| `GET` | `/v1/delivery/events` | Delivery event log (requires one of `inbox_id`, `domain_id`, `message_id`) |
+| `GET` | `/v1/delivery/suppressions` | Suppressed addresses (requires `inbox_id` or `domain_id`) |
+
+### Webhooks
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/webhooks/deliveries` | List webhook deliveries |
+| `GET` | `/v1/webhooks/deliveries/:deliveryId` | Get delivery detail |
+| `POST` | `/v1/webhooks/deliveries/:deliveryId/retry` | Retry failed delivery |
+| `GET` | `/v1/webhooks/health` | Webhook endpoint health stats |
+
+### Search
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/search/threads` | Search threads (requires `q` + `inbox_id` or `domain_id`) |
+
+### DMARC
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/dmarc/reports` | Submit DMARC aggregate report |
+| `GET` | `/v1/dmarc/reports` | List DMARC reports (requires `domain`) |
+| `GET` | `/v1/dmarc/summary` | Get DMARC summary (requires `domain`) |
+
+### Data Deletion
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/data/deletion-request` | Create deletion request with preview |
+| `POST` | `/v1/data/deletion-request/:id/confirm` | Confirm and execute deletion |
+| `GET` | `/v1/data/deletion-request/:id` | Check deletion status |
+
+## Request format
+
+All `POST` and `PUT` requests accept JSON:
+
+```bash
+curl -X POST https://api.commune.email/v1/messages/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "user@example.com",
+    "subject": "Hello",
+    "text": "Hi from my agent"
+  }'
+```
+
+## Response format
+
+All responses return JSON with a `data` wrapper:
+
+```json
+{
+  "data": { ... }
+}
+```
+
+Errors return a string `error` field:
+
+```json
+{
+  "error": "Missing required field: to"
+}
+```
+
+## Pagination
+
+List endpoints support cursor-based pagination:
+
+```bash
+# First page
+curl "https://api.commune.email/v1/threads?inbox_id=INBOX_ID&limit=20"
+# → { "data": [...], "next_cursor": "abc123", "has_more": true }
+
+# Next page
+curl "https://api.commune.email/v1/threads?inbox_id=INBOX_ID&limit=20&cursor=abc123"
+```
+
+## Rate limits
+
+| Tier | Rate limit | Daily email limit |
+|------|-----------|-------------------|
+| Free | 2 req/s | 100 emails/day |
+| Pro | 10 req/s | 5,000 emails/day |
+| Business | 50 req/s | 50,000 emails/day |
+| Enterprise | Custom | Custom |
+
+Rate-limited responses return `429` with a `Retry-After` header.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="TypeScript SDK" icon="js" href="/sdks/typescript">
+  Official Node.js SDK for type-safe access to all endpoints.
+</Card>
+
+<Card title="Python SDK" icon="python" href="/sdks/python">
+  Official Python SDK with sync and async clients.
+</Card>
+
+<Card title="Authentication" icon="key" href="/authentication">
+  API key permissions, scopes, and response format reference.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Detailed rate limit behavior, warmup gates, and burst detection.
+</Card>
+
+</Columns>

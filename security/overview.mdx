@@ -1,0 +1,164 @@
+---
+title: Security Overview
+description: How Commune protects your agent's email infrastructure — encryption, authentication, scanning, and monitoring.
+---
+
+Commune is built with security as a foundational layer, not an afterthought. Every email — inbound and outbound — passes through multiple security systems designed specifically for AI agent use cases.
+
+## Security architecture
+
+```
+Inbound:  Sender → SPF/DKIM/DMARC check → Spam scoring → Prompt injection detection → Attachment scanning → Your agent
+Outbound: Your agent → Content validation → Rate limiting → Burst detection → Warmup gate → DKIM signing → Recipient
+```
+
+## Defense layers
+
+<Columns cols={2}>
+
+<Card title="Email Authentication" icon="fingerprint" href="/security/email-authentication">
+  DKIM signing, SPF records, and DMARC policies ensure your emails are trusted and not spoofed.
+</Card>
+
+<Card title="Encryption at Rest" icon="lock" href="/security/encryption">
+  AES-256-GCM encryption for email content, webhook payloads, and secrets stored in the database.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-halved" href="/security/spam-prevention">
+  SpamAssassin scoring on inbound emails + outbound content validation to prevent your agent from sending spam.
+</Card>
+
+<Card title="Prompt Injection Detection" icon="robot" href="/security/prompt-injection">
+  AI-specific threat detection that analyzes inbound emails for prompt injection attempts targeting your agent.
+</Card>
+
+<Card title="Rate Limits" icon="gauge-high" href="/security/rate-limits">
+  Per-second, daily, and burst-based rate limiting to prevent abuse and protect sender reputation.
+</Card>
+
+</Columns>
+
+## Security by default
+
+These protections are active for every Commune account — no configuration required:
+
+| Protection | Inbound | Outbound | Description |
+|------------|---------|----------|-------------|
+| DKIM signing | — | ✓ | All outbound emails are DKIM-signed |
+| SPF alignment | ✓ | ✓ | DNS records ensure sender authorization |
+| Spam scoring | ✓ | — | SpamAssassin analysis on every inbound email |
+| Content validation | — | ✓ | Blocks phishing patterns and spam content |
+| Rate limiting | — | ✓ | Per-second and daily caps |
+| Burst detection | — | ✓ | Detects and blocks abnormal sending spikes |
+| Warmup gate | — | ✓ | Gradual volume increase for new inboxes <Badge color="purple" size="sm">Business</Badge> |
+| Email validation | — | ✓ | MX records, syntax, disposable domain detection |
+| Suppression lists | — | ✓ | Auto-blocks known bad addresses |
+| Bounce tracking | ✓ | — | Auto-suppresses hard bounces |
+| Encryption at rest | ✓ | ✓ | AES-256-GCM for stored email content <Badge color="purple" size="sm">Business</Badge> |
+| Attachment scanning | ✓ | — | Antivirus and heuristic threat detection |
+| Prompt injection | ✓ | — | AI-targeted attack detection <Badge color="purple" size="sm">Business</Badge> |
+| Audit logging | ✓ | ✓ | All API operations logged with TTL expiry <Badge color="purple" size="sm">Business</Badge> |
+| Request IDs | ✓ | ✓ | Every request gets a unique traceable ID |
+
+## Security headers
+
+All API responses include standard security headers:
+
+- `Strict-Transport-Security` — HSTS enforcement
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-Request-Id` — Unique request identifier for debugging
+
+## Authentication methods
+
+Commune supports three authentication methods depending on who is making the request:
+
+<Tabs>
+
+<Tab title="API Key">
+Standard API key authentication for backend integrations. Every request includes a `comm_` prefixed key.
+
+```
+Authorization: Bearer comm_xxx...
+```
+
+- Keys are HMAC-SHA256 hashed before storage
+- Scoped to an organization
+- Can be rotated without downtime
+- [Full docs](/authentication)
+</Tab>
+
+<Tab title="Agent Signing">
+Ed25519 signature authentication for AI agents. No shared secrets — agents sign every request with their private key.
+
+```
+Authorization: Agent {agentId}:{base64_signature}
+X-Commune-Timestamp: {unix_ms}
+```
+
+- Agents generate their own keypair at registration
+- Each request includes a unique timestamp (replay protection)
+- No tokens to manage or rotate
+- [Full docs](/agents/agent-auth)
+</Tab>
+
+<Tab title="Commune OAuth">
+OAuth-based identity verification for third-party products. Agents sign in using their Commune email via a 6-digit code.
+
+```
+Authorization: Basic base64(client_id:client_secret)   ← integrator calls
+Authorization: Bearer comm_oauth_xxx...                ← agentinfo calls
+```
+
+- Integrators register an OAuth client to get credentials
+- Agents prove inbox ownership via OTP
+- Returns trust score, email reputation, operator details
+- [Full docs](/oauth/overview)
+</Tab>
+
+</Tabs>
+
+## Infrastructure
+
+- **Transport**: HTTPS-only (HTTP is rejected)
+- **Authentication**: Multiple methods (API key, agent signing, OAuth) — see tabs above
+- **Database**: MongoDB with encryption at rest
+- **Secrets**: Webhook secrets and encryption keys are never exposed in API responses
+- **Key management**: Three-layer encryption key protection with fingerprint locking and canary verification
+
+## Compliance
+
+- **GDPR**: Full data deletion API with preview, confirmation tokens, and audit trail
+- **Data residency**: Email delivery through AWS regions (configurable per domain)
+- **Audit logs**: All operations logged to MongoDB with automatic TTL expiry
+- **Key rotation**: Dual-key rotation mechanism for zero-downtime encryption key changes
+
+## Explore security features
+
+<Columns cols={2}>
+
+<Card title="Email Authentication" icon="fingerprint" href="/security/email-authentication">
+  DKIM, SPF, and DMARC — authenticate every email your agent sends.
+</Card>
+
+<Card title="Encryption" icon="lock" href="/security/encryption">
+  AES-256-GCM encryption for email content, secrets, and attachments.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-halved" href="/security/spam-prevention">
+  Inbound spam scoring and outbound content validation.
+</Card>
+
+<Card title="Prompt Injection Detection" icon="robot" href="/security/prompt-injection">
+  AI-specific threat detection on every inbound email.
+</Card>
+
+<Card title="Rate Limits" icon="gauge-high" href="/security/rate-limits">
+  Burst detection, warmup gates, and sending health gates.
+</Card>
+
+<Card title="Data Deletion" icon="trash" href="/features/data-deletion">
+  GDPR-compliant deletion API with preview and audit trail.
+</Card>
+
+</Columns>

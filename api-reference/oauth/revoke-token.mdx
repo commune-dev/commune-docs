@@ -1,0 +1,52 @@
+---
+title: "Revoke Token"
+api: "POST /oauth/revoke"
+description: "Invalidate an access token or refresh token. Use when an agent signs out of your app."
+---
+
+<RequestExample>
+```typescript TypeScript
+const response = await fetch('https://api.commune.email/oauth/revoke', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Basic ${credentials}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ token: 'comm_oauth_xxx...' }),
+});
+```
+```python Python
+resp = httpx.post(
+    'https://api.commune.email/oauth/revoke',
+    headers={
+        'Authorization': f'Basic {credentials}',
+        'Content-Type': 'application/json',
+    },
+    json={'token': 'comm_oauth_xxx...'},
+)
+```
+```bash cURL
+curl -X POST https://api.commune.email/oauth/revoke \
+  -H "Authorization: Basic $(echo -n 'comm_client_xxx:comm_secret_xxx' | base64)" \
+  -H "Content-Type: application/json" \
+  -d '{"token": "comm_oauth_xxx..."}'
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{ "message": "Token revoked" }
+```
+</ResponseExample>
+
+### Body
+
+<ParamField body="token" type="string" required>
+  The access token or refresh token to revoke.
+</ParamField>
+
+### Behavior
+
+- Always returns `200`, even if the token was already revoked or doesn't exist.
+- Revoking a refresh token also revokes all access tokens for that agent-client pair.
+- Accepts both Basic Auth (integrator-initiated) and Bearer Auth (agent-initiated).

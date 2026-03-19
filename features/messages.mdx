@@ -1,0 +1,304 @@
+---
+title: Messages
+description: Send and list emails from your AI agent's inbox. DKIM signing, bounce tracking, and threading handled automatically.
+---
+
+## Send an email
+
+Commune handles DKIM signing, bounce tracking, and delivery monitoring. You just pass the recipient, subject, and body.
+
+<CodeGroup>
+
+```typescript TypeScript
+const result = await commune.messages.send({
+  to: 'user@example.com',
+  subject: 'Order confirmation',
+  html: '<h1>Order #1234</h1><p>Your order has been confirmed.</p>',
+  text: 'Order #1234 - Your order has been confirmed.',
+  inboxId: 'inbox_abc',         // Send from specific inbox
+});
+
+console.log(result.id);         // message ID
+console.log(result.thread_id);  // conversation thread ID
+```
+
+```python Python
+result = client.messages.send(
+    to="user@example.com",
+    subject="Order confirmation",
+    html="<h1>Order #1234</h1><p>Your order has been confirmed.</p>",
+    text="Order #1234 - Your order has been confirmed.",
+    inbox_id="inbox_abc",
+)
+
+print(result.id)
+print(result.thread_id)
+```
+
+```bash MCP
+# In Claude/Cursor/Windsurf, just ask:
+# "Send an email to user@example.com about order confirmation"
+
+# The agent calls:
+send_email(
+  to="user@example.com",
+  subject="Order confirmation",
+  html="<h1>Order #1234</h1><p>Confirmed.</p>",
+  inbox_id="inbox_abc"
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/messages/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "user@example.com",
+    "subject": "Order confirmation",
+    "html": "<h1>Order #1234</h1><p>Your order has been confirmed.</p>",
+    "text": "Order #1234 - Your order has been confirmed.",
+    "inboxId": "inbox_abc"
+  }'
+```
+
+</CodeGroup>
+
+<Prompt description="Send an email from your agent's inbox" actions={["copy", "cursor"]}>
+  Use my Commune inbox to send an email to customer@example.com. Subject: "Your order is confirmed". Body: "Hi! Your order #12345 has been confirmed and will ship within 2 business days."
+</Prompt>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `to` | `string \| string[]` | Yes | Recipient email address(es). Max 50 per request. |
+| `subject` | `string` | Yes | Email subject line |
+| `html` | `string` | No* | HTML body content |
+| `text` | `string` | No* | Plain text body (fallback) |
+| `from` | `string` | No | Sender address. Defaults to inbox address. |
+| `cc` | `string[]` | No | CC recipients |
+| `bcc` | `string[]` | No | BCC recipients |
+| `reply_to` | `string` | No | Reply-to address |
+| `thread_id` | `string` | No | Reply within an existing thread |
+| `inbox_id` | `string` | No | Send from a specific inbox |
+| `domain_id` | `string` | No | Send from a specific domain |
+| `attachments` | `string[]` | No | Attachment IDs from upload |
+
+<Note>
+  At least one of `html` or `text` must be provided.
+</Note>
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "msg_8f3a2b1c",
+    "thread_id": "thread_abc123",
+    "to": ["user@example.com"],
+    "subject": "Order confirmation",
+    "status": "sent"
+  }
+}
+```
+
+### Validation response
+
+When email validation detects issues (invalid addresses, disposable domains, suppressed recipients), the response includes a `validation` object:
+
+```json
+{
+  "data": { "id": "msg_..." },
+  "validation": {
+    "rejected": [
+      { "email": "bad@nonexistent.xyz", "reason": "no_mx_records" }
+    ],
+    "warnings": [
+      { "email": "user@mailinator.com", "reason": "disposable_domain" }
+    ],
+    "suppressed": [
+      { "email": "bounced@example.com", "reason": "hard_bounce" }
+    ],
+    "duration_ms": 42
+  }
+}
+```
+
+### Sending in a thread
+
+To reply within an existing conversation, pass the `thread_id`. Commune automatically sets the correct `In-Reply-To` and `References` headers for proper email threading:
+
+```typescript
+await commune.messages.send({
+  to: 'customer@example.com',
+  subject: 'Re: Order #1234',
+  html: '<p>Your order has shipped!</p>',
+  thread_id: 'thread_abc123',  // From the original message
+});
+```
+
+### Sending with attachments
+
+Upload files first, then reference their IDs:
+
+```typescript
+const upload = await commune.attachments.upload(
+  base64Content,
+  'invoice.pdf',
+  'application/pdf'
+);
+
+await commune.messages.send({
+  to: 'customer@example.com',
+  subject: 'Your invoice',
+  html: '<p>Invoice attached.</p>',
+  attachments: [upload.attachment_id],
+});
+```
+
+---
+
+## List messages
+
+Retrieve messages filtered by inbox, domain, or sender.
+
+<CodeGroup>
+
+```typescript TypeScript
+const messages = await commune.messages.list({
+  inbox_id: 'inbox_abc',
+  limit: 20,
+  order: 'desc',
+});
+```
+
+```python Python
+messages = client.messages.list(
+    inbox_id="inbox_abc",
+    limit=20,
+    order="desc",
+)
+```
+
+```bash MCP
+# "Show me the last 20 messages in my support inbox"
+# Agent calls list_threads + get_thread_messages
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/messages?inbox_id=inbox_abc&limit=20&order=desc" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `inbox_id` | `string` | No* | Filter by inbox |
+| `domain_id` | `string` | No* | Filter by domain |
+| `sender` | `string` | No* | Filter by sender email |
+| `limit` | `number` | No | Max results (1-1000, default 50) |
+| `order` | `string` | No | `asc` or `desc` (default) |
+| `before` | `string` | No | ISO date — messages before this time |
+| `after` | `string` | No | ISO date — messages after this time |
+
+<Note>
+  At least one of `inbox_id`, `domain_id`, or `sender` is required.
+</Note>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "message_id": "msg_8f3a2b1c",
+      "thread_id": "thread_abc123",
+      "direction": "outbound",
+      "channel": "email",
+      "content": "Your order has been confirmed.",
+      "content_html": "<h1>Order #1234</h1><p>Your order has been confirmed.</p>",
+      "participants": [
+        { "role": "sender", "identity": "support@yourdomain.com" },
+        { "role": "to", "identity": "user@example.com" }
+      ],
+      "attachments": [],
+      "created_at": "2026-02-14T10:30:00Z",
+      "metadata": {
+        "subject": "Order confirmation",
+        "created_at": "2026-02-14T10:30:00Z",
+        "domain_id": "d_abc",
+        "inbox_id": "inbox_abc",
+        "delivery_status": "delivered",
+        "spam_score": null,
+        "prompt_injection_checked": false
+      }
+    }
+  ]
+}
+```
+
+### Message object fields
+
+<Expandable title="Full message object fields">
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message_id` | `string` | Unique message identifier |
+| `thread_id` | `string` | Conversation thread ID |
+| `direction` | `"inbound" \| "outbound"` | Whether the message was received or sent |
+| `channel` | `"email"` | Always `email` |
+| `content` | `string` | Plain text content |
+| `content_html` | `string \| null` | HTML content |
+| `participants` | `Participant[]` | Sender, recipients, CC |
+| `attachments` | `string[]` | Attachment IDs |
+| `created_at` | `string` | ISO timestamp |
+| `metadata.subject` | `string` | Email subject |
+| `metadata.extracted_data` | `object \| null` | Structured data (if extraction configured) <Badge color="purple" size="sm">Business</Badge> |
+| `metadata.delivery_status` | `string \| null` | `sent`, `delivered`, `bounced`, `failed`, `complained` |
+| `metadata.spam_score` | `number \| null` | SpamAssassin score (inbound only) |
+| `metadata.prompt_injection_checked` | `boolean` | Whether PI detection ran <Badge color="purple" size="sm">Business</Badge> |
+| `metadata.prompt_injection_detected` | `boolean` | Whether PI was detected <Badge color="purple" size="sm">Business</Badge> |
+| `metadata.prompt_injection_risk` | `string` | Risk level: `none`, `low`, `medium`, `high`, `critical` <Badge color="purple" size="sm">Business</Badge> |
+
+</Expandable>
+
+## Middleware pipeline
+
+Every outbound email passes through Commune's security pipeline before delivery:
+
+1. **Rate limiting** — Per-second and daily rate limits
+2. **Burst detection** — Blocks abnormal sending spikes
+3. **Content validation** — Outbound spam/phishing check
+4. **Sending health gate** — Pauses sending if bounce/complaint rates are too high
+5. **Warmup gate** — Gradually increases daily send volume for new inboxes
+6. **Email validation** — Checks recipient syntax, MX records, disposable domains
+7. **Suppression check** — Skips previously bounced/complained addresses
+8. **Inbox daily limit** — Enforces per-inbox sending caps
+9. **API key limit** — Enforces per-key sending caps
+
+This pipeline protects your sender reputation automatically. You don't need to manage any of this manually.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Threads" icon="comments" href="/features/threads">
+  Browse conversation threads and manage triage with status and tags.
+</Card>
+
+<Card title="Attachments" icon="paperclip" href="/features/attachments">
+  Upload, send, and download file attachments.
+</Card>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track bounce rates, complaint rates, and suppression lists.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Receive inbound emails in real-time via HTTP POST.
+</Card>
+
+</Columns>

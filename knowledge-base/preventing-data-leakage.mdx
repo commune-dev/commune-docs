@@ -1,0 +1,286 @@
+---
+title: How do I prevent my agent from leaking sensitive data via email?
+description: Output sanitization, content policies, domain allowlists, and audit logging to stop agents from exposing PII, credentials, or confidential data.
+---
+
+## The short answer
+
+Your agent has access to context — customer records, internal docs, API keys, database contents. Without guardrails, any of that can end up in an outbound email. The fix is a middleware layer between your agent's output and the send call that scans for sensitive patterns, enforces content policies, and logs everything for audit.
+
+## Why agents leak data differently than humans
+
+A human employee knows not to paste an API key into an email. An LLM doesn't have that intuition. It has context, and it uses context to be helpful. If a customer asks "what's my account number?" and the agent has the account number in its context window, it will include it — along with whatever else seemed relevant.
+
+Common leakage scenarios:
+
+- Agent includes a customer's SSN or credit card number from a support ticket
+- Agent quotes an internal Slack message or document that was in its context
+- Agent includes API keys or tokens from a debugging session
+- Agent forwards an email thread that contains confidential information from other customers
+- Agent includes pricing or contract terms that are under NDA
+
+## Output sanitization middleware
+
+Build a check that runs on every outbound email body before it hits `commune.messages.send()`. This is your last line of defense.
+
+<CodeGroup>
+
+```typescript TypeScript
+interface SanitizationResult {
+  clean: boolean;
+  violations: string[];
+  redactedHtml: string;
+}
+
+const SENSITIVE_PATTERNS: { name: string; pattern: RegExp }[] = [
+  { name: 'ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g },
+  { name: 'credit_card', pattern: /\b(?:\d[ -]*?){13,16}\b/g },
+  { name: 'api_key_generic', pattern: /\b(?:sk|pk|api|key|token|secret)[_-][a-zA-Z0-9]{20,}\b/gi },
+  { name: 'commune_api_key', pattern: /\bcomm_[a-zA-Z0-9]{32,}\b/g },
+  { name: 'aws_key', pattern: /\bAKIA[0-9A-Z]{16}\b/g },
+  { name: 'private_key', pattern: /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/g },
+  { name: 'email_password', pattern: /\bpassword\s*[:=]\s*\S+/gi },
+  { name: 'ip_address_internal', pattern: /\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b/g },
+];
+
+function sanitizeContent(html: string): SanitizationResult {
+  const violations: string[] = [];
+  let redactedHtml = html;
+
+  for (const { name, pattern } of SENSITIVE_PATTERNS) {
+    const matches = html.match(pattern);
+    if (matches) {
+      violations.push(`${name}: ${matches.length} occurrence(s)`);
+      redactedHtml = redactedHtml.replace(pattern, `[REDACTED:${name}]`);
+    }
+  }
+
+  return {
+    clean: violations.length === 0,
+    violations,
+    redactedHtml,
+  };
+}
+
+// Wrap your send function
+async function safeSend(payload: SendEmailPayload): Promise<void> {
+  const result = sanitizeContent(payload.html);
+
+  if (!result.clean) {
+    console.error('Sensitive content detected:', result.violations);
+
+    // Option 1: Block the send entirely
+    throw new Error(`Email blocked: ${result.violations.join(', ')}`);
+
+    // Option 2: Send with redacted content
+    // await commune.messages.send({ ...payload, html: result.redactedHtml });
+
+    // Option 3: Queue for human review
+    // await submitForApproval({ ...payload, violations: result.violations });
+  }
+
+  await commune.messages.send(payload);
+}
+```
+
+```python Python
+import re
+from dataclasses import dataclass
+
+SENSITIVE_PATTERNS = [
+    ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+    ("credit_card", re.compile(r"\b(?:\d[ -]*?){13,16}\b")),
+    ("api_key_generic", re.compile(r"\b(?:sk|pk|api|key|token|secret)[_\-][a-zA-Z0-9]{20,}\b", re.I)),
+    ("commune_api_key", re.compile(r"\bcomm_[a-zA-Z0-9]{32,}\b")),
+    ("aws_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("private_key", re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----")),
+    ("email_password", re.compile(r"\bpassword\s*[:=]\s*\S+", re.I)),
+    ("ip_internal", re.compile(r"\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b")),
+]
+
+@dataclass
+class SanitizationResult:
+    clean: bool
+    violations: list[str]
+    redacted_html: str
+
+def sanitize_content(html: str) -> SanitizationResult:
+    violations = []
+    redacted = html
+
+    for name, pattern in SENSITIVE_PATTERNS:
+        matches = pattern.findall(html)
+        if matches:
+            violations.append(f"{name}: {len(matches)} occurrence(s)")
+            redacted = pattern.sub(f"[REDACTED:{name}]", redacted)
+
+    return SanitizationResult(
+        clean=len(violations) == 0,
+        violations=violations,
+        redacted_html=redacted,
+    )
+
+# Wrap your send function
+def safe_send(payload: dict) -> None:
+    result = sanitize_content(payload["html"])
+
+    if not result.clean:
+        print(f"Sensitive content detected: {result.violations}")
+        raise ValueError(f"Email blocked: {', '.join(result.violations)}")
+
+    client.messages.send(**payload)
+```
+
+</CodeGroup>
+
+<Warning>
+Regex-based detection catches known patterns but won't catch everything. It's a safety net, not a guarantee. Combine it with the other patterns below for defense in depth.
+</Warning>
+
+## Domain allowlists
+
+Restrict which domains your agent can email. This prevents an agent from sending data to arbitrary external addresses — whether through a bug, a prompt injection attack, or a hallucinated recipient.
+
+```typescript
+const ALLOWED_DOMAINS = new Set([
+  'yourcompany.com',
+  'yourclient.com',
+  'partner-org.com',
+]);
+
+function validateRecipient(to: string): boolean {
+  const domain = to.split('@')[1]?.toLowerCase();
+  return ALLOWED_DOMAINS.has(domain);
+}
+
+async function safeSend(payload: SendEmailPayload): Promise<void> {
+  // Check recipient domain
+  if (!validateRecipient(payload.to)) {
+    throw new Error(`Recipient domain not in allowlist: ${payload.to}`);
+  }
+
+  // Check sanitization
+  const result = sanitizeContent(payload.html);
+  if (!result.clean) {
+    throw new Error(`Sensitive content detected: ${result.violations.join(', ')}`);
+  }
+
+  await commune.messages.send(payload);
+}
+```
+
+For agents that need to contact external recipients (sales, support), maintain a per-agent allowlist rather than a global one. A support agent can email anyone who emailed in first. A sales agent can only email addresses from your CRM.
+
+## Content policies
+
+Beyond pattern matching, define semantic rules for what your agent is allowed to discuss via email.
+
+| Policy | Implementation |
+|--------|---------------|
+| No internal pricing | Block emails containing `$` amounts not in your public price list |
+| No employee names | Cross-reference against your HR directory before sending |
+| No competitor mentions | Block emails mentioning competitor brand names |
+| No legal language | Flag emails containing "liability", "indemnify", "warrant" for legal review |
+| No data exports | Block emails with attachments larger than 1MB or CSV/XLSX files |
+
+These policies are best enforced as a combination of regex (for simple patterns) and an LLM classifier (for semantic content). Run a cheap, fast model as a policy checker on every outbound draft:
+
+```typescript
+async function checkContentPolicy(draft: DraftEmail): Promise<{ allowed: boolean; reason?: string }> {
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: `You are a content policy checker for outbound emails.
+          Reject emails that contain: internal pricing not on the public price list,
+          employee personal information, competitor analysis, legal commitments,
+          or data exports. Respond with JSON: { "allowed": boolean, "reason": string }`,
+      },
+      { role: 'user', content: `To: ${draft.to}\nSubject: ${draft.subject}\n\n${draft.html}` },
+    ],
+    response_format: { type: 'json_object' },
+  });
+
+  return JSON.parse(response.choices[0].message.content!);
+}
+```
+
+## Audit logging
+
+Every outbound email should be logged with full context — who triggered it, what context the agent had, what the agent drafted, and whether it was modified before sending. This isn't optional. It's how you investigate incidents and prove compliance.
+
+```typescript
+async function auditedSend(payload: SendEmailPayload, context: AgentContext): Promise<void> {
+  const auditEntry = {
+    timestamp: new Date().toISOString(),
+    agent_id: context.agentId,
+    recipient: payload.to,
+    subject: payload.subject,
+    body_hash: sha256(payload.html),
+    thread_id: payload.thread_id,
+    context_summary: context.summary, // What the agent had access to
+    confidence: context.confidence,
+    sanitization_result: sanitizeContent(payload.html),
+    approval_status: context.approvalStatus,
+  };
+
+  // Log to your audit store (immutable, append-only)
+  await auditLog.append(auditEntry);
+
+  // Send the email
+  await commune.messages.send(payload);
+}
+```
+
+You can also use Commune's message list API to pull a full history of everything your agent sent:
+
+```typescript
+const sentMessages = await commune.messages.list({
+  inbox_id: agentInboxId,
+  direction: 'outbound',
+  after: '2025-01-01T00:00:00Z',
+});
+
+// Review each message
+for (const msg of sentMessages.data) {
+  const result = sanitizeContent(msg.html);
+  if (!result.clean) {
+    console.warn(`Post-hoc violation found in message ${msg.id}:`, result.violations);
+  }
+}
+```
+
+## Defense in depth checklist
+
+No single layer catches everything. Stack them:
+
+1. **Principle of least privilege** — only give your agent the context it actually needs
+2. **Output sanitization** — regex scan for known sensitive patterns
+3. **Domain allowlists** — restrict who the agent can email
+4. **Content policies** — semantic rules checked by a fast LLM
+5. **Human approval** — review queue for high-stakes messages
+6. **Audit logging** — immutable record of every outbound email
+7. **Post-hoc scanning** — periodic review of sent messages for violations
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Human-in-the-Loop Approval" icon="user-check" href="/knowledge-base/human-in-the-loop-approval">
+  Add approval flows so humans review emails before they send.
+</Card>
+
+<Card title="Prompt Injection via Email" icon="triangle-exclamation" href="/knowledge-base/what-is-prompt-injection-via-email">
+  How attackers use inbound email to hijack your agent's behavior.
+</Card>
+
+<Card title="Encryption" icon="lock" href="/security/encryption">
+  How Commune encrypts email content at rest and in transit.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full security architecture including authentication, encryption, and access control.
+</Card>
+
+</Columns>

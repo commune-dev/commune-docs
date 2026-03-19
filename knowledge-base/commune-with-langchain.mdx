@@ -1,0 +1,299 @@
+---
+title: How do I use Commune with LangChain?
+description: Connect LangChain agents to Commune to send email, read inboxes, and receive replies via webhooks.
+---
+
+## The short answer
+
+Install `commune-mail`, wrap the Commune client in `BaseTool` subclasses, and pass those tools to any LangChain agent. The agent can then send email, read inboxes, and act on replies — all through standard tool calls.
+
+## Step 1: Install and configure
+
+```bash
+pip install commune-mail langchain langchain-openai
+```
+
+Set your credentials as environment variables:
+
+```bash
+export COMMUNE_API_KEY="comm_..."
+export COMMUNE_DOMAIN_ID="DOMAIN_ID"
+export COMMUNE_INBOX_ID="INBOX_ID"
+export OPENAI_API_KEY="sk-..."
+```
+
+## Step 2: Create Commune tools
+
+Subclass `BaseTool` for each capability you want to expose to the agent.
+
+```python Python
+import os
+from typing import Optional, Type
+from pydantic import BaseModel, Field
+from langchain.tools import BaseTool
+from commune_mail import CommuneClient
+
+client = CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+DOMAIN_ID = os.environ["COMMUNE_DOMAIN_ID"]
+INBOX_ID = os.environ["COMMUNE_INBOX_ID"]
+
+
+class SendEmailInput(BaseModel):
+    to: str = Field(description="Recipient email address")
+    subject: str = Field(description="Email subject line")
+    body: str = Field(description="Plain text email body")
+
+
+class SendEmailTool(BaseTool):
+    name: str = "send_email"
+    description: str = (
+        "Send an email from the agent's inbox. "
+        "Use this when you need to contact someone or reply to a thread."
+    )
+    args_schema: Type[BaseModel] = SendEmailInput
+
+    def _run(self, to: str, subject: str, body: str) -> str:
+        result = client.messages.send(
+            domain_id=DOMAIN_ID,
+            inbox_id=INBOX_ID,
+            to=to,
+            subject=subject,
+            text=body,
+        )
+        return f"Email sent. Message ID: {result.id}"
+
+    async def _arun(self, to: str, subject: str, body: str) -> str:
+        raise NotImplementedError("Use async client for async support")
+
+
+class ReadInboxInput(BaseModel):
+    limit: Optional[int] = Field(default=10, description="Number of messages to fetch")
+
+
+class ReadInboxTool(BaseTool):
+    name: str = "read_inbox"
+    description: str = (
+        "Read recent messages from the agent's inbox. "
+        "Returns sender, subject, and a preview of each message."
+    )
+    args_schema: Type[BaseModel] = ReadInboxInput
+
+    def _run(self, limit: int = 10) -> str:
+        messages = client.messages.list(
+            domain_id=DOMAIN_ID,
+            inbox_id=INBOX_ID,
+            limit=limit,
+        )
+        if not messages.data:
+            return "Inbox is empty."
+        lines = []
+        for msg in messages.data:
+            preview = (msg.text or "")[:120].replace("\n", " ")
+            lines.append(f"- From: {msg.from_} | Subject: {msg.subject} | {preview}")
+        return "\n".join(lines)
+
+    async def _arun(self, limit: int = 10) -> str:
+        raise NotImplementedError("Use async client for async support")
+```
+
+## Step 3: Add tools to a LangChain agent
+
+Pass the tool instances to `create_react_agent` or `AgentExecutor`.
+
+```python Python
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain import hub
+
+tools = [SendEmailTool(), ReadInboxTool()]
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# Pull a standard ReAct prompt from the hub
+prompt = hub.pull("hwchase17/react")
+
+agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+response = agent_executor.invoke({
+    "input": "Check my inbox and reply to any unanswered messages about scheduling."
+})
+print(response["output"])
+```
+
+## Step 4: Handle inbound replies
+
+Set a webhook URL in your Commune dashboard so the agent is triggered when a reply arrives. Use FastAPI (or any ASGI framework) to receive the payload.
+
+```python Python
+from fastapi import FastAPI, Request
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain import hub
+
+app = FastAPI()
+
+tools = [SendEmailTool(), ReadInboxTool()]
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+prompt = hub.pull("hwchase17/react")
+agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+
+@app.post("/webhook/email")
+async def handle_inbound(request: Request):
+    payload = await request.json()
+    message = payload.get("message", {})
+    extracted = payload.get("extractedData") or {}
+
+    sender = message.get("from", "someone")
+    subject = message.get("subject", "")
+    body = message.get("text", "")
+
+    task = (
+        f"You received an email from {sender}.\n"
+        f"Subject: {subject}\n"
+        f"Body: {body}\n\n"
+        f"Extracted data: {extracted}\n\n"
+        "Decide whether to reply and, if so, send an appropriate response."
+    )
+
+    agent_executor.invoke({"input": task})
+    return {"ok": True}
+```
+
+The `extractedData` field is populated automatically if you have a [structured extraction schema](/features/structured-extraction) configured on the inbox. Use it to route or enrich the agent's context without extra parsing.
+
+## Full example
+
+A complete working script that provisions tools, runs an agent, and starts the webhook server:
+
+```python Python
+import os
+import uvicorn
+from typing import Optional, Type
+
+from pydantic import BaseModel, Field
+from fastapi import FastAPI, Request
+from langchain.tools import BaseTool
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain import hub
+from commune_mail import CommuneClient
+
+# --- Client setup ---
+client = CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+DOMAIN_ID = os.environ["COMMUNE_DOMAIN_ID"]
+INBOX_ID = os.environ["COMMUNE_INBOX_ID"]
+
+
+# --- Tools ---
+class SendEmailInput(BaseModel):
+    to: str = Field(description="Recipient email address")
+    subject: str = Field(description="Email subject line")
+    body: str = Field(description="Plain text email body")
+
+
+class SendEmailTool(BaseTool):
+    name: str = "send_email"
+    description: str = "Send an email from the agent's inbox."
+    args_schema: Type[BaseModel] = SendEmailInput
+
+    def _run(self, to: str, subject: str, body: str) -> str:
+        result = client.messages.send(
+            domain_id=DOMAIN_ID,
+            inbox_id=INBOX_ID,
+            to=to,
+            subject=subject,
+            text=body,
+        )
+        return f"Email sent. Message ID: {result.id}"
+
+    async def _arun(self, **kwargs):
+        raise NotImplementedError
+
+
+class ReadInboxInput(BaseModel):
+    limit: Optional[int] = Field(default=10, description="Number of messages to fetch")
+
+
+class ReadInboxTool(BaseTool):
+    name: str = "read_inbox"
+    description: str = "Read recent messages from the agent's inbox."
+    args_schema: Type[BaseModel] = ReadInboxInput
+
+    def _run(self, limit: int = 10) -> str:
+        messages = client.messages.list(
+            domain_id=DOMAIN_ID,
+            inbox_id=INBOX_ID,
+            limit=limit,
+        )
+        if not messages.data:
+            return "Inbox is empty."
+        lines = []
+        for msg in messages.data:
+            preview = (msg.text or "")[:120].replace("\n", " ")
+            lines.append(f"- From: {msg.from_} | Subject: {msg.subject} | {preview}")
+        return "\n".join(lines)
+
+    async def _arun(self, **kwargs):
+        raise NotImplementedError
+
+
+# --- Agent ---
+tools = [SendEmailTool(), ReadInboxTool()]
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+prompt = hub.pull("hwchase17/react")
+agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# --- Webhook server ---
+app = FastAPI()
+
+
+@app.post("/webhook/email")
+async def handle_inbound(request: Request):
+    payload = await request.json()
+    message = payload.get("message", {})
+    extracted = payload.get("extractedData") or {}
+
+    task = (
+        f"You received an email from {message.get('from', 'unknown')}.\n"
+        f"Subject: {message.get('subject', '')}\n"
+        f"Body: {message.get('text', '')}\n\n"
+        f"Extracted data: {extracted}\n\n"
+        "Decide whether to reply and, if so, send an appropriate response."
+    )
+
+    agent_executor.invoke({"input": task})
+    return {"ok": True}
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+```
+
+Run with:
+
+```bash
+python main.py
+```
+
+Then point your Commune webhook URL to `https://your-host/webhook/email`.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Email for LangChain Agents" icon="newspaper" href="/blog/email-for-langchain-agents">
+  Deeper walkthrough covering multi-agent email patterns with LangChain.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Create and manage per-agent inboxes programmatically via the API.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Webhook payload reference and signature verification for inbound email handling.
+</Card>
+
+</Columns>

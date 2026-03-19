@@ -1,0 +1,282 @@
+---
+title: How do I test my agent's email before going live?
+description: Use test inboxes, the shared commune.email domain, and webhook inspection tools to validate your agent's email flow end-to-end before production.
+---
+
+## The short answer
+
+Create a disposable test inbox on the shared `commune.email` domain, point your webhook at a local tunnel or inspection tool, and run a full send-receive-reply cycle. No custom domain or DNS setup needed. You can have a working test environment in under five minutes.
+
+## Test inboxes on commune.email
+
+Every Commune account gets access to the shared `commune.email` domain. Inboxes on this domain are fully functional — they send, receive, and thread emails the same way custom domain inboxes do. The only difference is the address ends in `@commune.email` instead of your own domain.
+
+Create a test inbox programmatically:
+
+<CodeGroup>
+
+```typescript TypeScript
+const testInbox = await commune.inboxes.create({
+  localPart: 'test-support-agent',
+  // No domainId → defaults to commune.email
+});
+
+console.log(testInbox.address); // test-support-agent@commune.email
+```
+
+```python Python
+test_inbox = client.inboxes.create(
+    local_part="test-support-agent",
+    # No domain_id → defaults to commune.email
+)
+
+print(test_inbox.address)  # test-support-agent@commune.email
+```
+
+</CodeGroup>
+
+Use a naming convention that makes test inboxes obvious: `test-{agent}-{env}` or `dev-{agent}-{timestamp}`. This prevents confusion when you have both test and production inboxes in the same account.
+
+<Tip>
+Delete test inboxes when you're done. They count toward your inbox limit, and leftover test inboxes clutter your dashboard.
+</Tip>
+
+## Inspecting webhook payloads
+
+Your agent processes inbound email via webhooks. Before wiring up your actual agent logic, you want to see exactly what Commune sends you.
+
+**Option 1: webhook.site** — No setup. Go to [webhook.site](https://webhook.site), copy the URL, set it as your inbox's webhook endpoint. Every inbound email shows up in the browser with full headers, body, and metadata.
+
+**Option 2: ngrok** — If you want to hit your local server directly, run `ngrok http 3000` and use the generated URL as your webhook endpoint. This lets you set breakpoints and inspect payloads in your actual application code.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Point your test inbox at ngrok
+await commune.inboxes.setWebhook(domainId, testInbox.id, {
+  endpoint: 'https://abc123.ngrok.io/webhook/email',
+  events: ['inbound'],
+});
+```
+
+```python Python
+# Point your test inbox at ngrok
+client.inboxes.set_webhook(
+    domain_id=domain_id,
+    inbox_id=test_inbox.id,
+    endpoint="https://abc123.ngrok.io/webhook/email",
+)
+```
+
+</CodeGroup>
+
+Send a test email from your personal Gmail to `test-support-agent@commune.email`. Within seconds, the webhook fires and you can inspect the full payload — `thread_id`, `content`, `participants`, `metadata`, everything.
+
+## End-to-end test pattern
+
+The most important test is the full cycle: send an outbound email, receive the reply webhook, verify the content, and confirm threading works. Here's a complete test scenario:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { Commune } from 'commune';
+
+async function testEmailCycle() {
+  const commune = new Commune({ apiKey: process.env.COMMUNE_TEST_API_KEY });
+
+  // 1. Create a test inbox
+  const inbox = await commune.inboxes.create({
+    localPart: `test-${Date.now()}`,
+  });
+
+  // 2. Set up webhook (use your test server URL)
+  await commune.inboxes.setWebhook(domainId, inbox.id, {
+    endpoint: process.env.TEST_WEBHOOK_URL,
+    events: ['inbound'],
+  });
+
+  // 3. Send an outbound email
+  const sent = await commune.messages.send({
+    from: inbox.address,
+    to: 'test-recipient@commune.email',
+    subject: 'Test: support ticket #12345',
+    html: '<p>Hi, we received your request. How can I help?</p>',
+  });
+
+  console.log('Sent message:', sent.id);
+  console.log('Thread ID:', sent.thread_id);
+
+  // 4. Verify the message exists in the thread
+  const messages = await commune.messages.list({
+    threadId: sent.thread_id,
+  });
+
+  assert(messages.length === 1, 'Thread should have exactly one message');
+  assert(messages[0].id === sent.id, 'Message ID should match');
+
+  // 5. Clean up
+  await commune.inboxes.delete(domainId, inbox.id);
+
+  console.log('All assertions passed');
+}
+
+testEmailCycle().catch(console.error);
+```
+
+```python Python
+import os
+import time
+from commune import Commune
+
+def test_email_cycle():
+    client = Commune(api_key=os.environ["COMMUNE_TEST_API_KEY"])
+
+    # 1. Create a test inbox
+    inbox = client.inboxes.create(
+        local_part=f"test-{int(time.time())}",
+    )
+
+    # 2. Set up webhook
+    client.inboxes.set_webhook(
+        domain_id=domain_id,
+        inbox_id=inbox.id,
+        endpoint=os.environ["TEST_WEBHOOK_URL"],
+    )
+
+    # 3. Send an outbound email
+    sent = client.messages.send(
+        from_address=inbox.address,
+        to="test-recipient@commune.email",
+        subject="Test: support ticket #12345",
+        html="<p>Hi, we received your request. How can I help?</p>",
+    )
+
+    print(f"Sent message: {sent.id}")
+    print(f"Thread ID: {sent.thread_id}")
+
+    # 4. Verify the message exists in the thread
+    messages = client.messages.list(thread_id=sent.thread_id)
+
+    assert len(messages) == 1, "Thread should have exactly one message"
+    assert messages[0].id == sent.id, "Message ID should match"
+
+    # 5. Clean up
+    client.inboxes.delete(domain_id, inbox.id)
+
+    print("All assertions passed")
+
+test_email_cycle()
+```
+
+</CodeGroup>
+
+## CI/CD integration
+
+You can run email tests in your CI pipeline. The key insight: you don't need to receive real inbound email in CI. Test the outbound path (send + verify message exists) synchronously, and test the inbound path (webhook handling) by posting synthetic payloads to your webhook endpoint.
+
+```typescript TypeScript
+// In your test suite
+describe('Agent email', () => {
+  let testInbox: Inbox;
+
+  beforeAll(async () => {
+    testInbox = await commune.inboxes.create({
+      localPart: `ci-${process.env.CI_JOB_ID}`,
+    });
+  });
+
+  afterAll(async () => {
+    await commune.inboxes.delete(domainId, testInbox.id);
+  });
+
+  test('sends outbound email and creates thread', async () => {
+    const sent = await commune.messages.send({
+      from: testInbox.address,
+      to: 'ci-sink@commune.email',
+      subject: 'CI test',
+      html: '<p>Automated test</p>',
+    });
+
+    expect(sent.id).toBeDefined();
+    expect(sent.thread_id).toBeDefined();
+  });
+
+  test('webhook handler processes inbound correctly', async () => {
+    // Post a synthetic webhook payload to your handler
+    const response = await fetch('http://localhost:3000/webhook/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'inbound',
+        message: {
+          id: 'msg_test_123',
+          thread_id: 'thr_test_456',
+          content: 'I need help with my account',
+          participants: [
+            { role: 'sender', identity: 'customer@example.com' },
+          ],
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  test('reply preserves thread_id', async () => {
+    const sent = await commune.messages.send({
+      from: testInbox.address,
+      to: 'ci-sink@commune.email',
+      subject: 'Thread test',
+      html: '<p>First message</p>',
+    });
+
+    const reply = await commune.messages.send({
+      from: testInbox.address,
+      to: 'ci-sink@commune.email',
+      subject: 'Re: Thread test',
+      html: '<p>Follow-up</p>',
+      thread_id: sent.thread_id,
+    });
+
+    expect(reply.thread_id).toBe(sent.thread_id);
+  });
+});
+```
+
+## Checklist before going live
+
+| Check | How to verify |
+|-------|---------------|
+| Outbound sends successfully | Send from test inbox, confirm `message.id` returned |
+| Webhook receives inbound | Send to test inbox from personal email, check webhook fires |
+| Threading works | Send, reply, verify both messages share `thread_id` |
+| Signature verification | Validate `x-commune-signature` header on webhook payloads |
+| Error handling | Send to invalid address, verify your agent handles the bounce webhook |
+| Rate limits | Check your plan's send limits match your expected volume |
+| Custom domain DNS | Run `commune.domains.verify(domainId)` — all records should be `verified` |
+
+<Note>
+Use a separate API key for testing. This keeps test traffic isolated from production metrics and makes it easy to revoke without affecting live agents.
+</Note>
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Full webhook reference including payload schema and signature verification.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Creating, configuring, and managing agent inboxes.
+</Card>
+
+<Card title="How do I handle email replies?" icon="reply" href="/knowledge-base/how-to-handle-email-replies">
+  Webhook setup, thread resolution, and reply patterns for inbound email.
+</Card>
+
+<Card title="Can I send without a custom domain?" icon="globe" href="/knowledge-base/sending-without-custom-domain">
+  Using the shared commune.email domain for development and early-stage agents.
+</Card>
+
+</Columns>

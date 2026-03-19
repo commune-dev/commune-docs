@@ -1,0 +1,133 @@
+---
+title: How do I set up per-agent inboxes for a multi-agent system?
+description: Create one inbox per agent or per campaign for sender reputation isolation and reply routing in multi-agent systems.
+---
+
+## The short answer
+
+Create one inbox per agent with `commune.inboxes.create()`. Each agent owns its address, builds its own reputation, and receives replies at its own webhook.
+
+## Why separate inboxes matter
+
+**Reputation isolation.** One agent's bad send → high bounce rate → that inbox gets filtered. The other agents are unaffected.
+
+**Reply routing.** When a prospect replies to `outreach@domain.com`, that reply routes to the outreach agent's webhook. If all agents shared one inbox, you'd have to parse who the reply is for.
+
+**Per-inbox metrics.** You can see exactly which agent or campaign has a deliverability problem.
+
+## Pattern 1: One inbox per agent role
+
+```typescript
+// Create inbox for each agent at startup
+const inboxes = await Promise.all([
+  commune.inboxes.create({ localPart: 'support', domainId }),
+  commune.inboxes.create({ localPart: 'outreach', domainId }),
+  commune.inboxes.create({ localPart: 'billing', domainId }),
+  commune.inboxes.create({ localPart: 'onboarding', domainId }),
+]);
+
+// Each has its own webhook
+await commune.inboxes.setWebhook(domainId, inboxes[0].id, {
+  endpoint: 'https://your-server.com/webhook/support',
+});
+await commune.inboxes.setWebhook(domainId, inboxes[1].id, {
+  endpoint: 'https://your-server.com/webhook/outreach',
+});
+// etc.
+```
+
+## Pattern 2: One inbox per campaign
+
+For outbound sales or marketing agents running multiple campaigns simultaneously:
+
+```typescript
+async function createCampaignInbox(campaignId: string) {
+  const inbox = await commune.inboxes.create({
+    localPart: `campaign-${campaignId}`,
+    domainId,
+  });
+
+  await commune.inboxes.setWebhook(domainId, inbox.id, {
+    endpoint: `https://your-server.com/webhook/campaign/${campaignId}`,
+  });
+
+  return inbox;
+}
+
+// Campaign reply automatically routes to the right campaign handler
+```
+
+## Pattern 3: Shared inbox with routing middleware
+
+One inbox, but extraction classifies intent on inbound, middleware routes to the right agent:
+
+```typescript
+app.post('/webhook/email', async (req, res) => {
+  const { message, extractedData } = req.body;
+  const intent = extractedData?.intent;
+
+  const agentRoutes: Record<string, (m: any) => Promise<void>> = {
+    billing: billingAgent.handle,
+    technical: supportAgent.handle,
+    cancellation: churnAgent.handle,
+    general: supportAgent.handle,
+  };
+
+  const handler = agentRoutes[intent] ?? supportAgent.handle;
+  await handler(message);
+  res.json({ ok: true });
+});
+```
+
+Use this when you want a single customer-facing address (`hello@domain.com`) but different agents handling different topics.
+
+## Stagger warmup
+
+If you create 20 inboxes on day 1, each starts a warmup from 0. Don't create all inboxes simultaneously and immediately send from all of them.
+
+```typescript
+// Create inboxes with delay between them
+for (const localPart of agentAddresses) {
+  await commune.inboxes.create({ localPart, domainId });
+  await sleep(2000); // stagger creation
+}
+```
+
+## Monitor all inboxes
+
+```typescript
+async function healthCheck() {
+  const { data: inboxes } = await commune.inboxes.list();
+
+  for (const inbox of inboxes) {
+    const { health } = inbox;
+    if (health.bounceRate > 0.03) {
+      await alertOps(`Inbox ${inbox.address} bounce rate: ${health.bounceRate}`);
+    }
+    if (health.complaintRate > 0.0005) {
+      await alertOps(`Inbox ${inbox.address} complaint rate: ${health.complaintRate}`);
+    }
+  }
+}
+
+// Run every hour
+setInterval(healthCheck, 60 * 60 * 1000);
+```
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Running 100+ Agent Inboxes at Scale" icon="newspaper" href="/blog/agent-email-at-scale">
+  Full architecture guide for managing large numbers of agent inboxes in production.
+</Card>
+
+<Card title="Multi-Agent Email Routing" icon="newspaper" href="/blog/multi-agent-email-routing">
+  Comparison of routing patterns for directing replies to the right agent.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Full inbox API reference for creating, configuring, and monitoring agent inboxes.
+</Card>
+
+</Columns>

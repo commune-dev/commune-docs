@@ -1,0 +1,196 @@
+---
+title: Data Deletion
+description: Delete messages, inboxes, or entire orgs with a two-step confirm flow. GDPR-compliant and audit-logged.
+---
+
+Request a deletion, review a preview of what will be removed, then confirm with a time-limited token. Scopes cover individual messages, full inboxes, or entire organizations. Every request is audit-logged.
+
+## How it works
+
+1. **Create a deletion request** — specify scope (organization, inbox, or messages) and get a preview
+2. **Review the preview** — see exactly what will be deleted before committing
+3. **Confirm with token** — use the time-limited confirmation token to execute
+4. **Deletion executes** — data is permanently removed and counts are returned
+
+## Create a deletion request
+
+<CodeGroup>
+
+```bash cURL — Delete an inbox's data
+curl -X POST https://api.commune.email/v1/data/deletion-request \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "inbox",
+    "inbox_id": "inbox_abc"
+  }'
+```
+
+```bash cURL — Delete old messages
+curl -X POST https://api.commune.email/v1/data/deletion-request \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "messages",
+    "before": "2025-01-01T00:00:00Z"
+  }'
+```
+
+```bash cURL — Delete entire organization
+curl -X POST https://api.commune.email/v1/data/deletion-request \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "organization"
+  }'
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope` | `string` | Yes | `organization`, `inbox`, or `messages` |
+| `inbox_id` | `string` | Conditional | Required when scope is `inbox` |
+| `before` | `string` | No | ISO date — delete messages before this time (for `messages` scope) |
+
+### Response
+
+```json
+{
+  "id": "del_req_abc123",
+  "scope": "inbox",
+  "inbox_id": "inbox_abc",
+  "status": "pending_confirmation",
+  "preview": {
+    "messages": 1247,
+    "attachments": 89,
+    "threads": 312,
+    "delivery_events": 2494
+  },
+  "confirmation_token": "tok_a1b2c3d4e5f6...",
+  "confirm_by": "2026-02-14T11:00:00Z",
+  "requested_at": "2026-02-14T10:00:00Z",
+  "warning": "This will permanently delete all messages, attachments, and delivery data for this inbox. This action cannot be undone."
+}
+```
+
+<Warning>
+  The `confirmation_token` is only returned once. Store it securely — you need it to confirm the deletion. The token expires at the `confirm_by` time (typically 1 hour).
+</Warning>
+
+## Confirm deletion
+
+Execute the deletion by providing the confirmation token:
+
+```bash
+curl -X POST "https://api.commune.email/v1/data/deletion-request/del_req_abc123/confirm" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "confirmation_token": "tok_a1b2c3d4e5f6..."
+  }'
+```
+
+### Response
+
+```json
+{
+  "id": "del_req_abc123",
+  "scope": "inbox",
+  "status": "completed",
+  "preview": {
+    "messages": 1247,
+    "attachments": 89,
+    "threads": 312,
+    "delivery_events": 2494
+  },
+  "deleted_counts": {
+    "messages": 1247,
+    "attachments": 89,
+    "threads": 312,
+    "delivery_events": 2494
+  },
+  "confirmed_at": "2026-02-14T10:05:00Z",
+  "completed_at": "2026-02-14T10:05:03Z"
+}
+```
+
+## Check deletion status
+
+```bash
+curl "https://api.commune.email/v1/data/deletion-request/del_req_abc123" \
+  -H "Authorization: Bearer comm_..."
+```
+
+### Deletion statuses
+
+| Status | Description |
+|--------|-------------|
+| `pending_confirmation` | Awaiting confirmation token |
+| `confirmed` | Confirmed, deletion in progress |
+| `completed` | Deletion finished |
+| `expired` | Confirmation token expired |
+| `failed` | Deletion encountered an error |
+
+## Scopes
+
+### `organization`
+Permanently deletes **all data** for your organization:
+- All messages, threads, attachments
+- All delivery events and suppressions
+- All inboxes and domains
+- All API keys and users
+- The organization itself
+
+### `inbox`
+Deletes all data for a specific inbox:
+- All messages in the inbox
+- All attachments
+- All delivery events
+- Thread metadata
+
+### `messages`
+Deletes messages matching the criteria:
+- Messages before the `before` date
+- Their associated attachments
+- Corresponding delivery events
+
+## Permissions
+
+Data deletion requires either:
+- The `admin` permission on your API key, or
+- The `data:delete` permission
+
+JWT-authenticated dashboard users can also create deletion requests.
+
+## Security
+
+- **Confirmation tokens are hashed** — only the hash is stored; the raw token is returned once
+- **Time-limited** — tokens expire after 1 hour
+- **Audit logged** — all deletion requests are recorded with the requester identity
+- **Idempotent** — confirming an already-completed request returns the completion status
+- **Conflict detection** — only one active deletion request per scope is allowed
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full picture of Commune's security, compliance, and encryption.
+</Card>
+
+<Card title="Encryption" icon="lock" href="/security/encryption">
+  How email content is encrypted at rest with AES-256-GCM.
+</Card>
+
+<Card title="Authentication" icon="key" href="/authentication">
+  API key permissions including the `data:delete` scope.
+</Card>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track and audit email delivery history before deleting.
+</Card>
+
+</Columns>

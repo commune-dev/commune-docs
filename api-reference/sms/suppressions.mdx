@@ -1,0 +1,163 @@
+---
+title: "SMS Suppressions"
+api: "GET /v1/sms/suppressions"
+description: "View and manage the SMS suppression list (opt-outs). Suppressions are created automatically when recipients reply STOP, and can be removed when a recipient opts back in via UNSTOP."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+// List suppressions
+const suppressions = await commune.sms.listSuppressions({
+  phoneNumberId: 'pn_01abc123',
+});
+
+console.log(suppressions.length, 'opted-out numbers');
+
+// Remove a suppression (re-enable delivery)
+await commune.sms.removeSuppression({
+  phoneNumberId: 'pn_01abc123',
+  number: '+14155559999',
+});
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+# List suppressions
+suppressions = client.sms.list_suppressions(phone_number_id="pn_01abc123")
+print(len(suppressions), "opted-out numbers")
+
+# Remove a suppression
+client.sms.remove_suppression(
+    phone_number_id="pn_01abc123",
+    number="+14155559999",
+)
+```
+```bash MCP
+list_sms_suppressions(phone_number_id="pn_01abc123")
+```
+```bash cURL
+# List suppressions
+curl "https://api.commune.email/v1/sms/suppressions?phone_number_id=pn_01abc123" \
+  -H "Authorization: Bearer comm_..."
+
+# Remove a suppression
+curl -X DELETE "https://api.commune.email/v1/sms/suppressions/%2B14155559999" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune sms list-suppressions --phone-number-id pn_01abc123
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 List Success
+{
+  "data": [
+    {
+      "id": "sup_01abc123",
+      "orgId": "org_01abc123",
+      "phoneNumber": "+14155559999",
+      "phoneNumberId": "pn_01abc123",
+      "reason": "stop",
+      "createdAt": "2026-02-20T08:00:00.000Z"
+    },
+    {
+      "id": "sup_02def456",
+      "orgId": "org_01abc123",
+      "phoneNumber": "+14085558888",
+      "phoneNumberId": null,
+      "reason": "manual",
+      "createdAt": "2026-02-18T12:00:00.000Z"
+    }
+  ]
+}
+```
+```json 200 Remove Success
+{
+  "data": {
+    "removed": true,
+    "phone_number": "+14155559999"
+  }
+}
+```
+</ResponseExample>
+
+## List Suppressions
+
+`GET /v1/sms/suppressions`
+
+### Query Parameters
+
+<ParamField query="phone_number_id" type="string">
+  Filter suppressions to a specific phone number. If omitted, returns all org-wide suppressions. Format: `pn_...`
+</ParamField>
+
+### Response
+
+<ResponseField name="data" type="SmsSuppression[]">
+  Array of active suppressions.
+
+  <Expandable title="SmsSuppression properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Suppression record ID.
+    </ResponseField>
+    <ResponseField name="orgId" type="string">
+      Organization ID.
+    </ResponseField>
+    <ResponseField name="phoneNumber" type="string">
+      The external phone number that opted out, in E.164 format.
+    </ResponseField>
+    <ResponseField name="phoneNumberId" type="string | null">
+      The Commune phone number this suppression applies to. `null` for org-wide suppressions that apply to all numbers.
+    </ResponseField>
+    <ResponseField name="reason" type="string">
+      How this suppression was created. One of: `stop` (recipient replied STOP), `unsubscribe`, `blocked`, `manual`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp when the suppression was created.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Remove Suppression
+
+`DELETE /v1/sms/suppressions/{phoneNumber}`
+
+Removes the suppression for a phone number, re-enabling outbound messages to it.
+
+### Path Parameters
+
+<ParamField path="phoneNumber" type="string" required>
+  The external phone number to un-suppress, URL-encoded. Example: `%2B14155559999` (for `+14155559999`).
+</ParamField>
+
+### Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="removed" type="boolean">
+      Always `true` on success.
+    </ResponseField>
+    <ResponseField name="phone_number" type="string">
+      The phone number that was un-suppressed.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+**Automatic suppression:** Commune automatically suppresses a number when an inbound STOP (or STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT) is received. Suppressed numbers have their inbound messages discarded and outbound sends return `422 recipient_suppressed`.
+
+Suppression is automatically lifted when an inbound START, YES, or UNSTOP is received — you do not need to call this endpoint for that case. Use this endpoint only to manually remove suppressions.
+</Note>
+
+<Note>
+**Scope:** Suppressions can be per-phone-number (`phoneNumberId` set) or org-wide (`phoneNumberId` null). An org-wide suppression blocks delivery from all of your phone numbers to that contact.
+</Note>

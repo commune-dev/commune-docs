@@ -1,0 +1,392 @@
+---
+title: How do I route emails between multiple agents?
+description: Use inbox-per-agent architecture, internal forwarding, and triage patterns to route inbound emails to the right agent with full thread context.
+---
+
+## The short answer
+
+Give each agent its own inbox for clear ownership. When Agent A receives something it can't handle, use Commune's send API to forward the email to Agent B's inbox, passing the `thread_id` so the receiving agent gets full conversation history. For complex routing, put a triage agent at the front that classifies every inbound email and routes to the right specialist.
+
+## Why routing matters
+
+A single agent handling all email works until it doesn't. The moment you have two types of work — support and billing, or English and Spanish, or simple and complex — you need routing. Without it, every agent sees every email and you're writing `if/else` spaghetti inside one monolith.
+
+Good routing gives you:
+
+- **Separation of concerns** — each agent has a focused prompt and toolset
+- **Independent scaling** — the billing agent can be a different model than the support agent
+- **Clear metrics** — you know exactly which agent is slow, which has high bounce rates, which customers prefer
+- **Graceful degradation** — if one agent is down, the others keep working
+
+## Pattern 1: Inbox-per-agent
+
+The simplest pattern. Each agent owns an inbox. Emails arrive at the right agent because the sender used the right address.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Create dedicated inboxes
+const supportInbox = await commune.inboxes.create({
+  localPart: 'support',
+  domainId,
+});
+
+const billingInbox = await commune.inboxes.create({
+  localPart: 'billing',
+  domainId,
+});
+
+const salesInbox = await commune.inboxes.create({
+  localPart: 'sales',
+  domainId,
+});
+
+// Each agent gets its own webhook endpoint
+await commune.inboxes.setWebhook(domainId, supportInbox.id, {
+  endpoint: 'https://your-server.com/agents/support/webhook',
+});
+
+await commune.inboxes.setWebhook(domainId, billingInbox.id, {
+  endpoint: 'https://your-server.com/agents/billing/webhook',
+});
+
+await commune.inboxes.setWebhook(domainId, salesInbox.id, {
+  endpoint: 'https://your-server.com/agents/sales/webhook',
+});
+```
+
+```python Python
+# Create dedicated inboxes
+support_inbox = client.inboxes.create(local_part="support", domain_id=domain_id)
+billing_inbox = client.inboxes.create(local_part="billing", domain_id=domain_id)
+sales_inbox = client.inboxes.create(local_part="sales", domain_id=domain_id)
+
+# Each agent gets its own webhook endpoint
+client.inboxes.set_webhook(
+    domain_id=domain_id,
+    inbox_id=support_inbox.id,
+    endpoint="https://your-server.com/agents/support/webhook",
+)
+
+client.inboxes.set_webhook(
+    domain_id=domain_id,
+    inbox_id=billing_inbox.id,
+    endpoint="https://your-server.com/agents/billing/webhook",
+)
+
+client.inboxes.set_webhook(
+    domain_id=domain_id,
+    inbox_id=sales_inbox.id,
+    endpoint="https://your-server.com/agents/sales/webhook",
+)
+```
+
+</CodeGroup>
+
+This works well when your users know which address to email. For customer-facing products, publish `support@`, `billing@`, etc. on your website.
+
+## Pattern 2: Triage agent
+
+When all email arrives at a single address (like `hello@yourdomain.com`), you need a triage agent. It reads every inbound email, classifies the intent, and routes to the right specialist.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Triage agent webhook handler
+app.post('/agents/triage/webhook', async (req, res) => {
+  const { message } = req.body;
+  const { thread_id, content, participants } = message;
+  const sender = participants.find(p => p.role === 'sender')?.identity;
+
+  // Classify the email
+  const classification = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: `Classify this email into exactly one category:
+          - billing: payment, invoice, refund, subscription, pricing
+          - support: bug, error, help, how-to, not working
+          - sales: demo, pricing inquiry, partnership, enterprise
+          - escalation: angry, legal, urgent, executive
+          Return only the category name.`,
+      },
+      { role: 'user', content },
+    ],
+  });
+
+  const category = classification.choices[0].message.content?.trim();
+
+  // Route to the right agent
+  const routes: Record<string, string> = {
+    billing: 'billing@yourdomain.com',
+    support: 'support@yourdomain.com',
+    sales: 'sales@yourdomain.com',
+    escalation: 'team@yourdomain.com', // human inbox
+  };
+
+  const targetAddress = routes[category] ?? routes.support;
+
+  // Forward with thread context
+  await commune.messages.send({
+    from: 'hello@yourdomain.com',
+    to: targetAddress,
+    subject: message.metadata.subject,
+    html: content,
+    thread_id,  // Preserves the full conversation history
+    metadata: {
+      routed_from: 'triage',
+      original_sender: sender,
+      classification: category,
+    },
+  });
+
+  res.json({ ok: true });
+});
+```
+
+```python Python
+# Triage agent webhook handler
+@app.post("/agents/triage/webhook")
+def triage_webhook():
+    payload = request.json
+    message = payload["message"]
+    thread_id = message["thread_id"]
+    content = message["content"]
+    sender = next(
+        p["identity"] for p in message["participants"] if p["role"] == "sender"
+    )
+
+    # Classify the email
+    classification = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Classify this email into exactly one category: "
+                    "billing, support, sales, escalation. "
+                    "Return only the category name."
+                ),
+            },
+            {"role": "user", "content": content},
+        ],
+    )
+
+    category = classification.choices[0].message.content.strip()
+
+    routes = {
+        "billing": "billing@yourdomain.com",
+        "support": "support@yourdomain.com",
+        "sales": "sales@yourdomain.com",
+        "escalation": "team@yourdomain.com",
+    }
+
+    target_address = routes.get(category, routes["support"])
+
+    # Forward with thread context
+    client.messages.send(
+        from_address="hello@yourdomain.com",
+        to=target_address,
+        subject=message["metadata"]["subject"],
+        html=content,
+        thread_id=thread_id,
+        metadata={
+            "routed_from": "triage",
+            "original_sender": sender,
+            "classification": category,
+        },
+    )
+
+    return jsonify({"ok": True})
+```
+
+</CodeGroup>
+
+The triage agent never replies to the customer directly. It classifies and forwards. The specialist agent picks up the thread and responds.
+
+## Preserving thread context
+
+When you forward an email between agents, pass the `thread_id`. This is the critical piece that makes multi-agent routing feel seamless to the customer.
+
+The receiving agent can fetch the full conversation history before generating its response:
+
+<CodeGroup>
+
+```typescript TypeScript
+// Specialist agent webhook handler
+app.post('/agents/billing/webhook', async (req, res) => {
+  const { message } = req.body;
+  const { thread_id, metadata } = message;
+  const originalSender = metadata?.original_sender;
+
+  // Get full conversation history
+  const history = await commune.messages.list({ threadId: thread_id });
+
+  // Build context for the billing agent
+  const context = history.map(m => ({
+    role: m.direction === 'inbound' ? 'user' : 'assistant',
+    content: m.content,
+  }));
+
+  // Generate response with full context
+  const reply = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: 'You are a billing support agent...' },
+      ...context,
+    ],
+  });
+
+  // Reply to the original sender, not the triage agent
+  await commune.messages.send({
+    from: 'billing@yourdomain.com',
+    to: originalSender,
+    subject: `Re: ${message.metadata.subject}`,
+    html: reply.choices[0].message.content,
+    thread_id,
+  });
+
+  res.json({ ok: true });
+});
+```
+
+```python Python
+# Specialist agent webhook handler
+@app.post("/agents/billing/webhook")
+def billing_webhook():
+    payload = request.json
+    message = payload["message"]
+    thread_id = message["thread_id"]
+    original_sender = message.get("metadata", {}).get("original_sender")
+
+    # Get full conversation history
+    history = client.messages.list(thread_id=thread_id)
+
+    context = [
+        {
+            "role": "user" if m.direction == "inbound" else "assistant",
+            "content": m.content,
+        }
+        for m in history
+    ]
+
+    # Generate response with full context
+    reply = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are a billing support agent..."},
+            *context,
+        ],
+    )
+
+    # Reply to the original sender
+    client.messages.send(
+        from_address="billing@yourdomain.com",
+        to=original_sender,
+        subject=f"Re: {message['metadata']['subject']}",
+        html=reply.choices[0].message.content,
+        thread_id=thread_id,
+    )
+
+    return jsonify({"ok": True})
+```
+
+</CodeGroup>
+
+## Escalation to humans
+
+Not every email should be handled by an agent. Build an escape hatch for cases where agent confidence is low, the customer is frustrated, or the request requires human judgment.
+
+```typescript TypeScript
+app.post('/agents/support/webhook', async (req, res) => {
+  const { message } = req.body;
+  const { thread_id, content } = message;
+  const sender = message.participants.find(p => p.role === 'sender')?.identity;
+
+  // Check if this should be escalated
+  const assessment = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: `Assess whether this email needs human intervention.
+          Return JSON: { "escalate": true/false, "reason": "..." }
+          Escalate if: legal threat, angry customer, account deletion,
+          data breach, or anything you're not confident handling.`,
+      },
+      { role: 'user', content },
+    ],
+    response_format: { type: 'json_object' },
+  });
+
+  const { escalate, reason } = JSON.parse(
+    assessment.choices[0].message.content!
+  );
+
+  if (escalate) {
+    // Forward to human team with context
+    await commune.messages.send({
+      from: 'support@yourdomain.com',
+      to: 'team@yourdomain.com',
+      subject: `[ESCALATED] ${message.metadata.subject}`,
+      html: `
+        <p><strong>Escalation reason:</strong> ${reason}</p>
+        <p><strong>Original sender:</strong> ${sender}</p>
+        <hr/>
+        ${content}
+      `,
+      thread_id,
+      metadata: { escalated: true, reason, original_sender: sender },
+    });
+
+    // Acknowledge to the customer
+    await commune.messages.send({
+      from: 'support@yourdomain.com',
+      to: sender,
+      subject: `Re: ${message.metadata.subject}`,
+      html: '<p>I\'ve looped in our team for this one. You\'ll hear from a human shortly.</p>',
+      thread_id,
+    });
+  } else {
+    // Handle normally with the agent
+    // ...
+  }
+
+  res.json({ ok: true });
+});
+```
+
+## Choosing a pattern
+
+| Scenario | Pattern | Why |
+|----------|---------|-----|
+| Users know which team to email | Inbox-per-agent | Simplest, no classification needed |
+| Single public address (hello@) | Triage + specialists | One entry point, smart routing |
+| High volume, clear categories | Triage + specialists | Scales well, each agent is focused |
+| Low volume, general support | Single agent | Don't over-engineer; add routing when you need it |
+| Mixed agent + human team | Any pattern + escalation | Always have an escape hatch to humans |
+
+Start with the simplest pattern that works. You can always add a triage layer later without changing your specialist agents — just point the triage agent's forwarding at the existing inbox addresses.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Per-agent inboxes" icon="users" href="/knowledge-base/per-agent-inboxes-multi-agent">
+  Creating and managing one inbox per agent with reputation isolation.
+</Card>
+
+<Card title="How does Commune thread emails?" icon="comments" href="/knowledge-base/how-does-commune-thread-emails">
+  Thread resolution ensures forwarded emails maintain conversation context.
+</Card>
+
+<Card title="Structured Extraction" icon="code" href="/features/structured-extraction">
+  Auto-extract fields from inbound emails to power classification and routing.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Webhook event types and payload schemas for inbound email routing.
+</Card>
+
+</Columns>

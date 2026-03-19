@@ -1,0 +1,339 @@
+---
+title: "How do I prevent my agent from sending duplicate emails?"
+description: "Use idempotency keys and deduplication patterns to prevent AI agents from sending the same email twice."
+---
+
+## The short answer
+
+Pass a deterministic idempotency key in the `headers` field of `messages.send()`. Commune deduplicates requests with the same key within a 24-hour window — if your agent retries the same send, only one email goes out. For application-level deduplication, track `(thread_id, intent)` pairs in your database before sending.
+
+## Why duplicates happen
+
+Duplicate emails are the most common production bug in agent email systems. They happen for several reasons:
+
+1. **Network retries.** Your HTTP client retries a 503 or timeout, but the first request already succeeded. The email sends twice.
+2. **Queue replays.** Your task queue (SQS, BullMQ, Celery) re-delivers a message after a consumer crash. The handler runs again and sends another email.
+3. **Webhook double-fires.** An inbound webhook fires twice (network glitch, retry logic), and your agent generates two replies to the same message.
+4. **Agent loops.** Agent A replies to a customer. The reply triggers a webhook. The webhook handler does not check direction and fires Agent A again. Infinite loop.
+5. **LLM non-determinism.** Your agent evaluates the same thread twice (e.g., periodic polling) and decides to reply both times because the LLM does not remember it already did.
+
+Each of these is solvable. The right defense is layered: idempotency keys at the API level, deduplication at the application level, and loop guards at the agent level.
+
+## Idempotency keys
+
+Pass an `Idempotency-Key` header in your send request. Commune stores the key and returns the original response for any duplicate request within 24 hours.
+
+The key should be deterministic — derived from the inputs, not randomly generated per attempt. This way, retries of the same logical send use the same key automatically.
+
+<CodeGroup>
+
+```typescript TypeScript
+import { createHash } from 'crypto';
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY! });
+
+// Deterministic key: hash of thread + recipient + intent
+function idempotencyKey(threadId: string, to: string, intent: string): string {
+  return createHash('sha256')
+    .update(`${threadId}:${to}:${intent}`)
+    .digest('hex')
+    .slice(0, 48);
+}
+
+await commune.messages.send({
+  to: 'customer@example.com',
+  subject: 'Your order has shipped',
+  inboxId: 'inb_orders_01',
+  threadId: 'thr_01XYZ',
+  text: 'Your order #8842 shipped today.',
+  headers: {
+    'Idempotency-Key': idempotencyKey('thr_01XYZ', 'customer@example.com', 'shipment_notification'),
+  },
+});
+```
+
+```python Python
+import hashlib
+import commune
+
+client = commune.CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+
+def idempotency_key(thread_id: str, to: str, intent: str) -> str:
+    """Deterministic key: hash of thread + recipient + intent."""
+    raw = f"{thread_id}:{to}:{intent}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:48]
+
+client.messages.send(
+    to="customer@example.com",
+    subject="Your order has shipped",
+    inbox_id="inb_orders_01",
+    thread_id="thr_01XYZ",
+    text="Your order #8842 shipped today.",
+    headers={
+        "Idempotency-Key": idempotency_key(
+            "thr_01XYZ", "customer@example.com", "shipment_notification"
+        ),
+    },
+)
+```
+
+</CodeGroup>
+
+### What makes a good idempotency key
+
+The key must be the same across retries of the same logical operation, but different for genuinely different sends.
+
+| Pattern | Key derivation | When to use |
+|---------|---------------|-------------|
+| Reply to inbound message | `hash(inbound_message_id)` | Webhook-triggered replies |
+| Notification per event | `hash(thread_id + event_type + event_id)` | Shipment, status change, alert |
+| Periodic digest | `hash(inbox_id + recipient + date)` | Daily/weekly summaries |
+| Follow-up in sequence | `hash(thread_id + sequence_step)` | Drip campaigns, multi-step outreach |
+
+<Warning>
+Do not use random UUIDs as idempotency keys. A new UUID per retry defeats the purpose — each retry looks like a new request and the email sends again.
+</Warning>
+
+## Application-level deduplication
+
+Idempotency keys protect against retries of the same API call. But what about your agent deciding to send the same email from two different code paths? For that, track sends in your own database.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Before sending, check if we already sent this
+async function sendOnce(params: {
+  dedupeKey: string;
+  to: string;
+  subject: string;
+  text: string;
+  inboxId: string;
+  threadId?: string;
+}) {
+  // Check your database
+  const existing = await db.agentSends.findOne({ dedupeKey: params.dedupeKey });
+  if (existing) {
+    console.log(`Already sent: ${params.dedupeKey}`);
+    return existing.result;
+  }
+
+  // Send
+  const result = await commune.messages.send({
+    to: params.to,
+    subject: params.subject,
+    inboxId: params.inboxId,
+    threadId: params.threadId,
+    text: params.text,
+    headers: {
+      'Idempotency-Key': params.dedupeKey,
+    },
+  });
+
+  // Record the send
+  await db.agentSends.insertOne({
+    dedupeKey: params.dedupeKey,
+    result,
+    sentAt: new Date(),
+  });
+
+  return result;
+}
+```
+
+```python Python
+def send_once(
+    dedupe_key: str,
+    to: str,
+    subject: str,
+    text: str,
+    inbox_id: str,
+    thread_id: str | None = None,
+) -> dict:
+    """Send an email only if we haven't already sent one with this key."""
+    # Check your database
+    existing = db.agent_sends.find_one({"dedupe_key": dedupe_key})
+    if existing:
+        print(f"Already sent: {dedupe_key}")
+        return existing["result"]
+
+    # Send
+    result = client.messages.send(
+        to=to,
+        subject=subject,
+        inbox_id=inbox_id,
+        thread_id=thread_id,
+        text=text,
+        headers={
+            "Idempotency-Key": dedupe_key,
+        },
+    )
+
+    # Record the send
+    db.agent_sends.insert_one({
+        "dedupe_key": dedupe_key,
+        "result": result,
+        "sent_at": datetime.utcnow(),
+    })
+
+    return result
+```
+
+</CodeGroup>
+
+## Preventing agent loops
+
+The most dangerous duplicate is an infinite loop: your agent replies to a customer, the reply triggers a webhook, and the webhook handler fires the agent again. This burns through your send quota in minutes.
+
+Three guards to prevent loops:
+
+### 1. Check message direction
+
+The most common fix. Only process inbound messages in your webhook handler.
+
+<CodeGroup>
+
+```typescript TypeScript
+app.post('/webhook', async (req, res) => {
+  const { message } = req.body;
+
+  // Only respond to inbound messages — ignore our own outbound emails
+  if (message.direction !== 'inbound') {
+    return res.json({ ok: true, skipped: 'outbound' });
+  }
+
+  // Safe to generate a reply
+  const reply = await agent.generateReply(message);
+  await commune.messages.send({ /* ... */ });
+  res.json({ ok: true });
+});
+```
+
+```python Python
+@app.post("/webhook")
+def handle_webhook(payload: dict):
+    message = payload["message"]
+
+    # Only respond to inbound messages — ignore our own outbound emails
+    if message["direction"] != "inbound":
+        return {"ok": True, "skipped": "outbound"}
+
+    # Safe to generate a reply
+    reply = agent.generate_reply(message)
+    client.messages.send(...)
+    return {"ok": True}
+```
+
+</CodeGroup>
+
+### 2. Track replied-to message IDs
+
+Even after filtering by direction, an inbound webhook can fire twice. Track which message IDs you have already replied to.
+
+<CodeGroup>
+
+```typescript TypeScript
+app.post('/webhook', async (req, res) => {
+  const { message } = req.body;
+  if (message.direction !== 'inbound') {
+    return res.json({ ok: true });
+  }
+
+  // Dedup: have we already replied to this exact message?
+  const alreadyReplied = await db.replies.findOne({
+    inboundMessageId: message.message_id,
+  });
+  if (alreadyReplied) {
+    return res.json({ ok: true, skipped: 'already_replied' });
+  }
+
+  const reply = await agent.generateReply(message);
+  await commune.messages.send({ /* ... */ });
+
+  await db.replies.insertOne({
+    inboundMessageId: message.message_id,
+    repliedAt: new Date(),
+  });
+
+  res.json({ ok: true });
+});
+```
+
+```python Python
+@app.post("/webhook")
+def handle_webhook(payload: dict):
+    message = payload["message"]
+    if message["direction"] != "inbound":
+        return {"ok": True}
+
+    # Dedup: have we already replied to this exact message?
+    already_replied = db.replies.find_one({
+        "inbound_message_id": message["message_id"],
+    })
+    if already_replied:
+        return {"ok": True, "skipped": "already_replied"}
+
+    reply = agent.generate_reply(message)
+    client.messages.send(...)
+
+    db.replies.insert_one({
+        "inbound_message_id": message["message_id"],
+        "replied_at": datetime.utcnow(),
+    })
+
+    return {"ok": True}
+```
+
+</CodeGroup>
+
+### 3. Rate-limit per thread
+
+As a safety net, cap how many times your agent can reply to a single thread within a time window. If your agent has already sent 5 replies in the last hour to the same thread, something is probably wrong.
+
+```typescript TypeScript
+const REPLY_LIMIT = 5;
+const WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+const recentReplies = await db.replies.countDocuments({
+  threadId: message.thread_id,
+  repliedAt: { $gt: new Date(Date.now() - WINDOW_MS) },
+});
+
+if (recentReplies >= REPLY_LIMIT) {
+  console.error(`Loop guard: ${REPLY_LIMIT} replies in 1h to thread ${message.thread_id}`);
+  // Alert on-call, do not send
+  return res.json({ ok: false, error: 'loop_guard' });
+}
+```
+
+## Defense in depth
+
+The strongest protection layers all three strategies:
+
+| Layer | Protects against | Implementation |
+|-------|-----------------|----------------|
+| Idempotency keys | Network retries, queue replays | `Idempotency-Key` header on every send |
+| Application dedup | Duplicate agent decisions | Check `(dedupe_key)` in DB before sending |
+| Direction filter | Self-reply loops | `if (direction !== 'inbound') return` |
+| Message ID tracking | Webhook double-fires | Track replied-to `message_id` in DB |
+| Thread rate limit | Runaway loops | Cap replies per thread per hour |
+
+No single layer catches everything. Use all of them.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Webhook payload reference and signature verification for inbound events.
+</Card>
+
+<Card title="How does Commune thread emails?" icon="comments" href="/knowledge-base/how-does-commune-thread-emails">
+  Thread resolution mechanics — how Commune identifies which thread an inbound email belongs to.
+</Card>
+
+<Card title="Rate Limits" icon="gauge-high" href="/security/rate-limits">
+  Commune's built-in rate limits and how they protect your sender reputation.
+</Card>
+
+</Columns>

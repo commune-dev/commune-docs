@@ -1,0 +1,215 @@
+---
+title: How do I use Commune with CrewAI?
+description: Add email capabilities to CrewAI agents using Commune's Python client — send email, read replies, and route inbound messages by crew role.
+---
+
+## Short answer
+
+Wrap Commune's Python client in two `BaseTool` subclasses — `CommuneSendEmailTool` and `CommuneReadThreadTool` — and assign them to the agents that need email access. Agents without email tools stay isolated from the inbox. Inbound replies are handled via a FastAPI webhook that re-triggers the crew with reply context.
+
+## Step 1: Install and configure
+
+```bash
+pip install crewai commune-mail
+```
+
+Add your credentials to `.env`:
+
+```bash
+COMMUNE_API_KEY=comm_...
+COMMUNE_INBOX_ID=inbox_...
+```
+
+## Step 2: Create Commune tools
+
+Define each tool as a `BaseTool` subclass with a Pydantic input schema. CrewAI uses the schema to validate agent inputs before calling `_run`.
+
+```python
+import os
+from crewai.tools import BaseTool
+from pydantic import BaseModel, Field
+from commune_mail import CommuneClient
+
+client = CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+INBOX_ID = os.environ["COMMUNE_INBOX_ID"]
+
+
+class SendEmailInput(BaseModel):
+    to: str = Field(description="Recipient email address")
+    subject: str = Field(description="Email subject line")
+    body: str = Field(description="Plain text email body")
+
+
+class CommuneSendEmailTool(BaseTool):
+    name: str = "send_email"
+    description: str = "Send an outbound email via Commune."
+    args_schema: type[BaseModel] = SendEmailInput
+
+    def _run(self, to: str, subject: str, body: str) -> str:
+        result = client.messages.send(
+            inbox_id=INBOX_ID,
+            to=to,
+            subject=subject,
+            text=body,
+        )
+        return f"Email sent. Message ID: {result.id}"
+
+
+class ReadThreadInput(BaseModel):
+    thread_id: str = Field(description="Thread ID to fetch messages from")
+
+
+class CommuneReadThreadTool(BaseTool):
+    name: str = "read_email_thread"
+    description: str = "Read all messages in an email thread by thread ID."
+    args_schema: type[BaseModel] = ReadThreadInput
+
+    def _run(self, thread_id: str) -> str:
+        messages = client.messages.list(
+            inbox_id=INBOX_ID,
+            thread_id=thread_id,
+        )
+        output = []
+        for msg in messages.data:
+            output.append(
+                f"From: {msg.from_address}\n"
+                f"Subject: {msg.subject}\n"
+                f"Body: {msg.text}\n"
+                "---"
+            )
+        return "\n".join(output) if output else "No messages found in thread."
+```
+
+## Step 3: Assign tools to agents
+
+Only give email tools to agents that need them. The researcher has no email access.
+
+```python
+from crewai import Agent
+
+outreach_agent = Agent(
+    role="Outreach Specialist",
+    goal="Send cold emails to prospects and track outreach.",
+    backstory="You write concise, high-converting outbound emails.",
+    tools=[CommuneSendEmailTool()],
+    verbose=True,
+)
+
+responder_agent = Agent(
+    role="Reply Handler",
+    goal="Read inbound replies and draft appropriate responses.",
+    backstory="You read email threads and decide how to respond.",
+    tools=[CommuneReadThreadTool()],
+    verbose=True,
+)
+
+researcher_agent = Agent(
+    role="Researcher",
+    goal="Research prospects and provide talking points.",
+    backstory="You gather context about companies and contacts.",
+    tools=[],  # no email access
+    verbose=True,
+)
+```
+
+## Step 4: Run the crew
+
+```python
+from crewai import Crew, Task, Process
+
+research_task = Task(
+    description="Research Acme Corp. Find their main pain points and recent activity.",
+    expected_output="A bullet list of 3-5 talking points for an outreach email.",
+    agent=researcher_agent,
+)
+
+outreach_task = Task(
+    description=(
+        "Using the research provided, send a cold email to the founder at "
+        "founder@acmecorp.com. Subject must be 4 words or fewer. "
+        "Body must be 3 sentences max."
+    ),
+    expected_output="Confirmation that the email was sent, including the message ID.",
+    agent=outreach_agent,
+)
+
+crew = Crew(
+    agents=[researcher_agent, outreach_agent],
+    tasks=[research_task, outreach_task],
+    process=Process.sequential,
+    verbose=True,
+)
+
+result = crew.kickoff()
+print(result)
+```
+
+## Step 5: Handle inbound replies
+
+Set up a FastAPI webhook to receive inbound email events from Commune. When a reply arrives, extract the thread ID and re-trigger the crew in a background task.
+
+```python
+from fastapi import FastAPI, BackgroundTasks, Request
+from crewai import Crew, Task, Process
+
+app = FastAPI()
+
+
+def handle_reply(thread_id: str, from_address: str, body: str):
+    reply_task = Task(
+        description=(
+            f"A reply arrived on thread {thread_id} from {from_address}. "
+            f"Reply content: {body}\n\n"
+            "Read the full thread and draft an appropriate follow-up response. "
+            "Send it using the send_email tool."
+        ),
+        expected_output="Confirmation the follow-up email was sent.",
+        agent=responder_agent,
+    )
+
+    reply_crew = Crew(
+        agents=[responder_agent],
+        tasks=[reply_task],
+        process=Process.sequential,
+    )
+    reply_crew.kickoff()
+
+
+@app.post("/webhook/email")
+async def email_webhook(request: Request, background_tasks: BackgroundTasks):
+    payload = await request.json()
+
+    event_type = payload.get("type")
+    if event_type != "email.received":
+        return {"ok": True}
+
+    message = payload.get("message", {})
+    thread_id = message.get("threadId")
+    from_address = message.get("from")
+    body = message.get("text", "")
+
+    if thread_id:
+        background_tasks.add_task(handle_reply, thread_id, from_address, body)
+
+    return {"ok": True}
+```
+
+Configure your Commune inbox to send inbound webhooks to `https://yourapp.com/webhook/email`. See [Webhooks](/features/webhooks) for setup instructions.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="CrewAI Email Agent Example" icon="newspaper" href="/blog/crewai-email-agent">
+  End-to-end walkthrough building an outreach crew with researcher, sender, and reply-handler agents.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Manage inboxes and routing rules for multi-agent systems.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Receive and handle inbound email events in real time via webhook.
+</Card>
+
+</Columns>

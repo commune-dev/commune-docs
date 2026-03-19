@@ -1,0 +1,100 @@
+---
+title: x402 Payments
+description: Pay per API call with USDC. No API key, no subscription.
+---
+
+Your agent pays per API call with USDC instead of a monthly subscription. You create an [x402 client](https://x402.org), pass it to Commune, and every call is paid automatically. No signup, no API key.
+
+## Install
+
+<CodeGroup>
+
+```bash TypeScript
+npm install commune-ai @x402/fetch @x402/evm viem
+```
+
+```bash Python
+pip install commune-mail x402[evm] eth-account
+```
+
+</CodeGroup>
+
+## Use
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+import { x402Client } from '@x402/fetch';
+import { registerExactEvmScheme } from '@x402/evm/exact/client';
+import { privateKeyToAccount } from 'viem/accounts';
+
+// Create your x402 client (your key, your signer — we never see it)
+const x402 = new x402Client();
+registerExactEvmScheme(x402, {
+  signer: privateKeyToAccount(process.env.WALLET_KEY as `0x${string}`),
+});
+
+// Pass it to Commune
+const commune = new CommuneClient({ wallet: x402 });
+
+// Same API as always — payments happen automatically
+const inbox = await commune.inboxes.create({ localPart: 'support' });
+await commune.messages.send({
+  to: 'user@example.com',
+  subject: 'Hello from my agent',
+  text: 'Paid with USDC. No API key needed.',
+});
+```
+
+```python Python
+import os
+from commune import CommuneClient
+from x402 import x402Client
+from x402.mechanisms.evm.exact import ExactEvmScheme
+from eth_account import Account
+
+# Create your x402 client (your key, your signer — we never see it)
+x402 = x402Client()
+x402.register("eip155:*", ExactEvmScheme(signer=Account.from_key(os.environ["WALLET_KEY"])))
+
+# Pass it to Commune
+client = CommuneClient(wallet=x402)
+
+# Same API as always
+inbox = client.inboxes.create(local_part="support")
+client.messages.send(
+    to="user@example.com",
+    subject="Hello from my agent",
+    text="Paid with USDC. No API key needed.",
+)
+```
+
+</CodeGroup>
+
+## Pricing
+
+| Endpoint | Price |
+|---|---|
+| Send email | $0.003 |
+| Create inbox | $0.01 |
+| Create domain | $0.05 |
+| Upload attachment | $0.005 |
+| List messages | $0.001 |
+| List/get threads | $0.001 |
+| Search | $0.002 |
+| Monitoring, identity, DMARC | Free |
+
+$5 of USDC covers ~1,600 emails or ~5,000 reads.
+
+## Networks
+
+Works on Base (default), Polygon, Arbitrum, Optimism, Ethereum, Avalanche, and Solana. Your x402 client picks the cheapest option.
+
+## Links
+
+- [x402 Protocol](https://x402.org) — the open standard
+- [Coinbase x402 Buyer Quickstart](https://docs.cdp.coinbase.com/x402/quickstart-for-buyers) — wallet setup, signers, multi-network
+- [x402 GitHub](https://github.com/coinbase/x402) — TypeScript, Python, Go SDKs
+- [x402 Network Support](https://docs.cdp.coinbase.com/x402/network-support) — all chains and tokens
+- [Stripe x402 Docs](https://docs.stripe.com/payments/machine/x402) — Stripe's x402 implementation

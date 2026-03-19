@@ -1,0 +1,97 @@
+---
+title: "List domains"
+api: "GET /v1/domains"
+description: "List all custom domains registered for the authenticated organization."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const result = await commune.domains.list();
+
+for (const domain of result.data) {
+  console.log(domain.name, domain.status);
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.domains.list()
+
+for domain in result.data:
+    print(domain.name, domain.status)
+```
+```bash MCP
+list_domains()
+```
+```bash cURL
+curl "https://api.commune.email/v1/domains" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune domains list
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "id": "domain_xyz789",
+      "name": "mycompany.com",
+      "status": "verified",
+      "region": "us-east-1",
+      "records": [],
+      "createdAt": "2026-02-01T08:00:00.000Z"
+    },
+    {
+      "id": "domain_abc456",
+      "name": "outreach.mycompany.com",
+      "status": "pending",
+      "region": "us-east-1",
+      "records": [],
+      "createdAt": "2026-02-25T10:00:00.000Z"
+    }
+  ]
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Response
+
+<ResponseField name="data" type="object[]">
+  Array of domain objects for your organization. Internal fields like `webhook` and `orgId` are excluded from the response.
+
+  <Expandable title="Domain object properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Unique domain identifier.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      The registered domain name (e.g. `mycompany.com`).
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Verification status. One of: `pending`, `verified`. Only verified domains can send email.
+    </ResponseField>
+    <ResponseField name="region" type="string">
+      AWS region for this domain's sending infrastructure.
+    </ResponseField>
+    <ResponseField name="records" type="object[]">
+      DNS records required for verification. May be empty if records were already verified.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 creation timestamp.
+    </ResponseField>
+  </Expandable>
+</ResponseField>

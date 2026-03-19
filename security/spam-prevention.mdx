@@ -1,0 +1,147 @@
+---
+title: Spam Prevention
+description: Inbound spam scoring and outbound content validation for every email.
+---
+
+Inbound emails are spam-scored before reaching your agent. Outbound emails pass content validation before sending. Both directions are handled automatically.
+
+## Inbound: spam scoring
+
+Every inbound email is analyzed with SpamAssassin-compatible scoring before it reaches your agent.
+
+### What's checked
+
+- **Header analysis** — forged headers, missing fields, suspicious routing
+- **Content patterns** — known spam phrases, excessive capitalization, link density
+- **Sender reputation** — blacklist checks, domain age, authentication results
+- **HTML analysis** — hidden text, suspicious scripts, deceptive formatting
+
+### Spam score in webhook
+
+The spam analysis is included in every webhook payload and message metadata:
+
+```json
+{
+  "security": {
+    "spam": {
+      "checked": true,
+      "score": 1.2,
+      "action": "accept",
+      "flagged": false
+    }
+  },
+  "message": {
+    "metadata": {
+      "spam_score": 1.2,
+      "spam_action": "accept",
+      "spam_flagged": false
+    }
+  }
+}
+```
+
+### Score thresholds
+
+| Score range | Action | Description |
+|-------------|--------|-------------|
+| 0 – 3.0 | `accept` | Clean email, delivered normally |
+| 3.0 – 5.0 | `flag` | Suspicious, `spam_flagged: true` — delivered with warning |
+| 5.0+ | `reject` | High confidence spam — not delivered |
+
+### Using spam data in your agent
+
+```typescript
+app.post('/webhook/email', (req, res) => {
+  const { security, message } = req.body;
+
+  if (security.spam.flagged) {
+    // Handle with caution — might be spam
+    console.log(`Spam score: ${security.spam.score}`);
+    return res.json({ ok: true }); // Acknowledge but don't process
+  }
+
+  // Process normally
+  processEmail(message);
+  res.json({ ok: true });
+});
+```
+
+## Outbound: content validation
+
+Before any email leaves Commune, it passes through content validation that checks for patterns commonly associated with spam and phishing.
+
+### What's checked
+
+- **Phishing patterns** — deceptive links, urgency language, credential requests
+- **Spam content** — excessive promotional language, misleading subjects
+- **Link analysis** — suspicious URLs, redirect chains
+- **Sender consistency** — From address matches inbox configuration
+
+### Blocked content
+
+Emails that fail content validation are rejected with a `400` error before they're sent. This protects your sender reputation by ensuring your agent never sends emails that could be flagged as spam by recipients.
+
+## Email validation
+
+Before sending, every recipient address is validated:
+
+| Check | Description | Result |
+|-------|-------------|--------|
+| **Syntax** | RFC-compliant email format | Reject if invalid |
+| **MX records** | Domain has valid mail servers | Reject if no MX |
+| **Disposable domains** | Known temporary email providers | Warning (sends with flag) |
+| **Role-based addresses** | Generic addresses like `admin@`, `info@` | Warning (sends with flag) |
+
+### Validation in send response
+
+```json
+{
+  "data": { "id": "msg_..." },
+  "validation": {
+    "rejected": [
+      { "email": "user@nonexistent.xyz", "reason": "no_mx_records" }
+    ],
+    "warnings": [
+      { "email": "test@mailinator.com", "reason": "disposable_domain" }
+    ],
+    "duration_ms": 35
+  }
+}
+```
+
+Your agent can use `validation.rejected` to know which recipients were skipped and `validation.warnings` to flag potentially unreliable addresses.
+
+## Suppression lists
+
+Commune automatically maintains per-inbox suppression lists:
+
+- **Hard bounces** → immediately and permanently suppressed
+- **Soft bounces** → suppressed after 3 consecutive failures (expires after 7 days)
+- **Complaints** → permanently suppressed when a recipient marks email as spam
+- **Unsubscribes** → permanently suppressed
+
+Sending to a suppressed address is silently skipped — your agent receives a `validation.suppressed` entry in the response rather than a send error.
+
+See [Delivery Monitoring](/features/delivery-monitoring#suppressions) for the suppressions API.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Prompt Injection Detection" icon="robot" href="/security/prompt-injection">
+  AI-specific threat detection for inbound emails targeting your agent.
+</Card>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track bounce rates, complaint rates, and suppression lists.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Burst detection, warmup gates, and sending health gates.
+</Card>
+
+<Card title="Email Authentication" icon="fingerprint" href="/security/email-authentication">
+  DKIM, SPF, and DMARC authentication for your domain.
+</Card>
+
+</Columns>

@@ -1,0 +1,356 @@
+---
+title: "How do I attach files to agent emails?"
+description: "Upload and attach files to outbound agent emails, and process inbound attachments from webhook payloads using the Commune SDK."
+---
+
+## The short answer
+
+Upload the file as base64 to `attachments.upload()`, then pass the returned `attachment_id` to `messages.send()`. For inbound attachments, the webhook payload includes attachment metadata — call `attachments.url()` to get a signed download link.
+
+## Why agents need attachments
+
+Plain text gets you far, but real business communication requires files. Legal agents send contracts. Sales agents attach proposals. Support agents include invoices and screenshots. Finance agents forward receipts. Without attachment support, your agent hits a wall the moment a customer asks "can you send me the PDF?"
+
+Commune handles attachment storage, delivery, and retrieval so your agent code stays focused on business logic.
+
+## Sending attachments (outbound)
+
+The workflow is two steps: upload the file, then reference it when sending.
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+import { readFileSync } from 'fs';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY! });
+
+// Step 1: Upload the file
+const pdfBytes = readFileSync('./contract.pdf');
+const upload = await commune.attachments.upload(
+  Buffer.from(pdfBytes).toString('base64'),
+  'contract.pdf',
+  'application/pdf'
+);
+
+// Step 2: Send with the attachment
+await commune.messages.send({
+  to: 'client@lawfirm.com',
+  subject: 'Signed engagement letter',
+  inboxId: 'inb_legal_01',
+  text: 'Please find the signed engagement letter attached.',
+  html: '<p>Please find the signed engagement letter attached.</p>',
+  attachments: [upload.attachment_id],
+});
+```
+
+```python Python
+import base64
+import commune
+
+client = commune.CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+
+# Step 1: Upload the file
+with open("contract.pdf", "rb") as f:
+    content = base64.b64encode(f.read()).decode()
+
+upload = client.attachments.upload(
+    content=content,
+    filename="contract.pdf",
+    mime_type="application/pdf",
+)
+
+# Step 2: Send with the attachment
+client.messages.send(
+    to="client@lawfirm.com",
+    subject="Signed engagement letter",
+    inbox_id="inb_legal_01",
+    text="Please find the signed engagement letter attached.",
+    html="<p>Please find the signed engagement letter attached.</p>",
+    attachments=[upload.attachment_id],
+)
+```
+
+</CodeGroup>
+
+### Multiple attachments
+
+Pass multiple `attachment_id` values in the array. Each file is uploaded independently, so you can reuse the same attachment across multiple emails without re-uploading.
+
+<CodeGroup>
+
+```typescript TypeScript
+const proposalUpload = await commune.attachments.upload(
+  proposalBase64, 'proposal.pdf', 'application/pdf'
+);
+const pricingUpload = await commune.attachments.upload(
+  pricingBase64, 'pricing.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+);
+
+await commune.messages.send({
+  to: 'prospect@company.com',
+  subject: 'Proposal and pricing',
+  inboxId: salesInboxId,
+  text: 'Attached: our proposal and pricing breakdown.',
+  attachments: [proposalUpload.attachment_id, pricingUpload.attachment_id],
+});
+```
+
+```python Python
+proposal_upload = client.attachments.upload(
+    content=proposal_base64,
+    filename="proposal.pdf",
+    mime_type="application/pdf",
+)
+pricing_upload = client.attachments.upload(
+    content=pricing_base64,
+    filename="pricing.xlsx",
+    mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
+
+client.messages.send(
+    to="prospect@company.com",
+    subject="Proposal and pricing",
+    inbox_id=sales_inbox_id,
+    text="Attached: our proposal and pricing breakdown.",
+    attachments=[proposal_upload.attachment_id, pricing_upload.attachment_id],
+)
+```
+
+</CodeGroup>
+
+## Generating files on the fly
+
+Agents often need to create files dynamically — CSV exports, PDF invoices, or JSON reports. Generate the content in memory, base64-encode it, and upload.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Generate a CSV in memory
+const csvRows = [
+  'Date,Description,Amount',
+  '2026-03-01,Monthly subscription,$49.00',
+  '2026-03-05,API overage (12k calls),$24.00',
+  '2026-03-10,Support add-on,$15.00',
+];
+const csvContent = Buffer.from(csvRows.join('\n')).toString('base64');
+
+const upload = await commune.attachments.upload(
+  csvContent,
+  'march-invoice.csv',
+  'text/csv'
+);
+
+await commune.messages.send({
+  to: 'billing@customer.com',
+  subject: 'March 2026 invoice',
+  inboxId: billingInboxId,
+  text: 'Your March invoice is attached.',
+  attachments: [upload.attachment_id],
+});
+```
+
+```python Python
+import base64
+import csv
+import io
+
+# Generate a CSV in memory
+buf = io.StringIO()
+writer = csv.writer(buf)
+writer.writerow(["Date", "Description", "Amount"])
+writer.writerow(["2026-03-01", "Monthly subscription", "$49.00"])
+writer.writerow(["2026-03-05", "API overage (12k calls)", "$24.00"])
+writer.writerow(["2026-03-10", "Support add-on", "$15.00"])
+
+content = base64.b64encode(buf.getvalue().encode("utf-8")).decode()
+
+upload = client.attachments.upload(
+    content=content,
+    filename="march-invoice.csv",
+    mime_type="text/csv",
+)
+
+client.messages.send(
+    to="billing@customer.com",
+    subject="March 2026 invoice",
+    inbox_id=billing_inbox_id,
+    text="Your March invoice is attached.",
+    attachments=[upload.attachment_id],
+)
+```
+
+</CodeGroup>
+
+## Size limits
+
+| Limit | Value |
+|-------|-------|
+| Max file size per attachment | 10 MB |
+| Max attachments per email | 10 |
+| Max total payload per email | 25 MB |
+| Supported content encoding | Base64 |
+
+<Warning>
+Base64 encoding increases size by roughly 33%. A 7.5 MB file becomes ~10 MB after encoding. Keep source files under 7.5 MB to stay within the 10 MB limit.
+</Warning>
+
+## Receiving attachments (inbound)
+
+When someone sends your agent an email with attachments, the webhook payload includes an `attachments` array with metadata for each file. The actual file content is not included in the webhook — retrieve it via the API.
+
+The webhook payload looks like this:
+
+```json
+{
+  "event": "inbound",
+  "message": {
+    "message_id": "msg_01ABC",
+    "thread_id": "thr_01XYZ",
+    "content": "Here's the signed contract.",
+    "attachments": ["att_01DEF", "att_02GHI"]
+  },
+  "attachments": [
+    {
+      "attachment_id": "att_01DEF",
+      "filename": "contract_signed.pdf",
+      "mime_type": "application/pdf",
+      "size": 245000
+    },
+    {
+      "attachment_id": "att_02GHI",
+      "filename": "photo_id.jpg",
+      "mime_type": "image/jpeg",
+      "size": 1200000
+    }
+  ]
+}
+```
+
+### Downloading inbound attachments
+
+Use `attachments.get()` for metadata and `attachments.url()` for a signed download URL.
+
+<CodeGroup>
+
+```typescript TypeScript
+// In your webhook handler
+async function handleInbound(payload: any) {
+  for (const att of payload.attachments ?? []) {
+    // Get metadata (already in payload, but you can also fetch it)
+    const meta = await commune.attachments.get(att.attachment_id);
+    console.log(`File: ${meta.filename} (${meta.size} bytes)`);
+
+    // Get a signed download URL (expires in 1 hour)
+    const urlInfo = await commune.attachments.get(att.attachment_id, {
+      url: true,
+      expiresIn: 3600,
+    });
+
+    // Download the file
+    const response = await fetch(urlInfo.url);
+    const fileBuffer = await response.arrayBuffer();
+
+    // Process — e.g., extract text from PDF, parse CSV, store in S3
+    await processAttachment(meta.filename, meta.mime_type, fileBuffer);
+  }
+}
+```
+
+```python Python
+import requests
+
+# In your webhook handler
+def handle_inbound(payload: dict):
+    for att in payload.get("attachments", []):
+        # Get metadata
+        meta = client.attachments.get(att["attachment_id"])
+        print(f"File: {meta.filename} ({meta.size} bytes)")
+
+        # Get a signed download URL (expires in 1 hour)
+        url_info = client.attachments.url(att["attachment_id"], expires_in=3600)
+
+        # Download the file
+        response = requests.get(url_info.url)
+        file_bytes = response.content
+
+        # Process — e.g., extract text from PDF, parse CSV, store in S3
+        process_attachment(meta.filename, meta.mime_type, file_bytes)
+```
+
+</CodeGroup>
+
+### Filtering by type
+
+Not every attachment is worth processing. Filter by MIME type and size before downloading.
+
+<CodeGroup>
+
+```typescript TypeScript
+const ALLOWED_TYPES = new Set([
+  'application/pdf',
+  'text/csv',
+  'image/png',
+  'image/jpeg',
+]);
+const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+
+for (const att of payload.attachments ?? []) {
+  if (!ALLOWED_TYPES.has(att.mime_type)) {
+    console.log(`Skipping ${att.filename} — unsupported type ${att.mime_type}`);
+    continue;
+  }
+  if (att.size > MAX_SIZE) {
+    console.log(`Skipping ${att.filename} — too large (${att.size} bytes)`);
+    continue;
+  }
+  // Safe to download and process
+}
+```
+
+```python Python
+ALLOWED_TYPES = {"application/pdf", "text/csv", "image/png", "image/jpeg"}
+MAX_SIZE = 5 * 1024 * 1024  # 5 MB
+
+for att in payload.get("attachments", []):
+    if att["mime_type"] not in ALLOWED_TYPES:
+        print(f"Skipping {att['filename']} — unsupported type {att['mime_type']}")
+        continue
+    if att["size"] > MAX_SIZE:
+        print(f"Skipping {att['filename']} — too large ({att['size']} bytes)")
+        continue
+    # Safe to download and process
+```
+
+</CodeGroup>
+
+## Common MIME types
+
+| File type | MIME type |
+|-----------|-----------|
+| PDF | `application/pdf` |
+| Word (.docx) | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| Excel (.xlsx) | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
+| CSV | `text/csv` |
+| PNG image | `image/png` |
+| JPEG image | `image/jpeg` |
+| JSON | `application/json` |
+| ZIP archive | `application/zip` |
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Full send API reference including attachments, HTML, CC/BCC, and threading.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Webhook payload reference for inbound emails and attachment metadata.
+</Card>
+
+<Card title="Sending HTML Emails" icon="code" href="/knowledge-base/how-to-send-html-emails">
+  Format agent emails with HTML for professional, readable communication.
+</Card>
+
+</Columns>

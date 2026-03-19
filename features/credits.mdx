@@ -1,0 +1,183 @@
+---
+title: Credits
+description: How credits work, what operations consume them, and how to top up your balance.
+---
+
+Credits are Commune's unit for phone and SMS operations. Every SMS sent, MMS, inbound message received, and phone number rented deducts credits from your balance.
+
+## How credits work
+
+Every organization has two credit pools:
+
+- **Included credits** — replenish monthly based on your plan. They reset on your billing cycle and do not roll over.
+- **Purchased credits** — from one-time bundle purchases. They roll over month-to-month and never expire.
+
+When an operation runs, included credits are consumed first. Purchased credits are drawn from only after included credits are exhausted.
+
+## Credits by plan
+
+| Plan | Included credits/month |
+|------|------------------------|
+| Free | 200 |
+| Agent Pro | 500 |
+| Business | 5,000 |
+| Enterprise | Unlimited |
+
+## Credit costs
+
+| Operation | Credits |
+|-----------|---------|
+| US/CA outbound SMS (per segment) | 2 |
+| US/CA outbound MMS | 5 |
+| US/CA inbound SMS | 1 |
+| Phone number rental | 150/month (prorated) |
+| International SMS | varies — see [SMS](/phone/sms) |
+
+<Note>
+SMS messages over 160 characters are split into segments. Each segment costs the per-segment rate. Standard GSM-7 encoding allows 160 chars/segment; Unicode (emoji, non-Latin) allows 70 chars/segment.
+</Note>
+
+## Check your balance
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const balance = await commune.credits.get();
+
+console.log(`Available: ${balance.total} credits`);
+console.log(`Included: ${balance.included}`);
+console.log(`Purchased: ${balance.purchased}`);
+console.log(`Used this cycle: ${balance.usedThisCycle}`);
+console.log(`Resets at: ${balance.cycleResetAt}`);
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+balance = client.credits.get()
+
+print(f"Available: {balance.total} credits")
+print(f"Included: {balance.included}")
+print(f"Purchased: {balance.purchased}")
+print(f"Used this cycle: {balance.used_this_cycle}")
+print(f"Resets at: {balance.cycle_reset_at}")
+```
+
+```bash MCP
+get_credit_balance()
+```
+
+```bash cURL
+curl https://api.commune.email/v1/credits \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+## Purchase credits
+
+Credits can be topped up at any time via a credit bundle. Bundles are one-time purchases — they do not create a recurring subscription.
+
+### Available bundles
+
+| Bundle | Credits | Price | Per credit |
+|--------|---------|-------|------------|
+| Starter | 1,000 | $12 | $0.0120 |
+| Growth | 5,000 | $55 | $0.0110 |
+| Scale | 20,000 | $200 | $0.0100 |
+
+Larger bundles have a lower per-credit rate. All purchased credits roll over indefinitely.
+
+### Initiate a purchase
+
+The purchase flow creates a Stripe Checkout session. Redirect your user to the returned URL to complete payment.
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const checkout = await commune.credits.purchase({
+  bundleId: 'growth',
+  success_url: 'https://your-app.com/billing?credits=success',
+  cancel_url: 'https://your-app.com/billing',
+});
+
+// Redirect your user to complete the purchase
+console.log(checkout.checkout_url);
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+checkout = client.credits.purchase(
+    bundle_id="growth",
+    success_url="https://your-app.com/billing?credits=success",
+    cancel_url="https://your-app.com/billing",
+)
+
+print(checkout.checkout_url)
+```
+
+```bash MCP
+purchase_credits(bundle_id="growth")
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/credits/checkout \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bundle": "growth",
+    "success_url": "https://your-app.com/billing?credits=success",
+    "cancel_url": "https://your-app.com/billing"
+  }'
+```
+
+</CodeGroup>
+
+<Note>
+Credits are added automatically via Stripe webhook after payment is confirmed. There is typically a 1–3 second delay between payment completion and credits appearing in your balance.
+</Note>
+
+## What happens when credits run out
+
+If an operation is attempted with insufficient credits, it fails with a `402` response:
+
+```json
+{
+  "error": "insufficient_phone_credits",
+  "balance": 12,
+  "required": 150
+}
+```
+
+The `balance` and `required` fields tell you exactly how short your account is, so you can surface a clear top-up prompt to your users.
+
+## API reference
+
+<CardGroup cols={3}>
+
+<Card title="Get Balance" icon="chart-bar" href="/api-reference/credits/get">
+  Query your current credit balance, cycle usage, and reset timestamp.
+</Card>
+
+<Card title="List Bundles" icon="list" href="/api-reference/credits/bundles">
+  Retrieve available credit bundles and per-credit pricing.
+</Card>
+
+<Card title="Purchase Credits" icon="credit-card" href="/api-reference/credits/purchase">
+  Create a Stripe Checkout session to top up your balance.
+</Card>
+
+</CardGroup>

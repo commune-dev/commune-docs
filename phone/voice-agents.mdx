@@ -1,0 +1,188 @@
+---
+title: "Voice Agents"
+description: "Configure an AI voice agent for each phone number to handle inbound calls and power outbound calls."
+---
+
+A voice agent is the AI persona that speaks during calls on a given phone number. Each phone number has at most one voice agent. The agent is defined by a system prompt, a voice, optional tools, and behavioral limits.
+
+<Note>
+Voice agents require the **Agent Pro** plan or higher.
+</Note>
+
+## The voice agent object
+
+```json
+{
+  "id": "va_01abc123",
+  "orgId": "org_01abc123",
+  "phoneNumberId": "pn_01abc123",
+  "systemPrompt": "You are a helpful support agent for Acme Corp. ...",
+  "voice": "marin",
+  "firstMessage": "Hi! This is Acme support. How can I help you today?",
+  "toolIds": ["tool_01abc123"],
+  "maxCallDurationSeconds": 600,
+  "idleTimeoutMs": 10000,
+  "recordingEnabled": false,
+  "createdAt": "2024-01-15T12:00:00Z",
+  "updatedAt": "2024-01-15T12:00:00Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `systemPrompt` | string | Instructions for the agent (up to 16,000 characters) |
+| `voice` | string | Voice persona (see [voices](#voices)) |
+| `firstMessage` | string | What the agent says first when a call connects (max 500 chars) |
+| `toolIds` | string[] | IDs of tools available to this agent during calls (max 20) |
+| `maxCallDurationSeconds` | number | Auto-hangup after this many seconds (10–3600) |
+| `idleTimeoutMs` | number | Hang up if caller is silent for this long in ms (1000–60000) |
+| `recordingEnabled` | boolean | Whether to record calls |
+
+---
+
+## Voices
+
+Commune supports 10 voice personas powered by real-time neural TTS:
+
+| Voice | Character |
+|-------|-----------|
+| `alloy` | Neutral, balanced |
+| `ash` | Warm, conversational |
+| `ballad` | Smooth, formal |
+| `cedar` | Calm, grounded |
+| `coral` | Friendly, upbeat |
+| `echo` | Clear, confident |
+| `marin` | Natural, expressive *(default)* |
+| `sage` | Measured, thoughtful |
+| `shimmer` | Energetic, bright |
+| `verse` | Deep, authoritative |
+
+---
+
+## Configure a voice agent
+
+Create or replace the voice agent for a phone number.
+
+```bash
+PUT /v1/phone-numbers/:phoneNumberId/voice-agent
+```
+
+```json
+{
+  "systemPrompt": "You are a support agent for Acme Corp. Help customers with order status, returns, and general questions. Be concise and friendly. When you look up an order, use the lookup_order tool.",
+  "voice": "marin",
+  "firstMessage": "Hi, you've reached Acme support. What can I help you with?",
+  "toolIds": ["tool_01abc123"],
+  "maxCallDurationSeconds": 600,
+  "idleTimeoutMs": 10000,
+  "recordingEnabled": false
+}
+```
+
+All fields have defaults except `systemPrompt`, which is required.
+
+**Response** — returns the created/updated voice agent object.
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `400` | Phone number lacks voice capability |
+| `400` | One or more tool IDs not found |
+| `403` | Feature not available on your plan |
+| `404` | Phone number not found |
+
+<Tip>
+Write system prompts the same way you would for a chat LLM — role, knowledge, tone, constraints. The agent follows these instructions throughout the call.
+</Tip>
+
+---
+
+## Get the voice agent
+
+```bash
+GET /v1/phone-numbers/:phoneNumberId/voice-agent
+```
+
+The response includes expanded tool metadata (name, description — not secrets):
+
+```json
+{
+  "data": {
+    "id": "va_01abc123",
+    "systemPrompt": "...",
+    "voice": "marin",
+    "tools": [
+      { "id": "tool_01abc123", "name": "lookup_order", "description": "Look up an order by ID" }
+    ],
+    ...
+  }
+}
+```
+
+---
+
+## Remove the voice agent
+
+```bash
+DELETE /v1/phone-numbers/:phoneNumberId/voice-agent
+```
+
+Returns `204 No Content`. After deletion, the phone number can no longer make or receive voice calls until a new agent is configured.
+
+---
+
+## How a call works
+
+1. **Call initiated** — outbound via `POST /v1/calls`, or inbound (carrier routes to your number).
+2. **Audio streaming** — Twilio streams real-time audio to Commune's voice bridge over WebSocket.
+3. **STT** — incoming audio is transcribed to text.
+4. **Agent** — the LLM receives the transcript and system prompt, generates a response, optionally calls tools.
+5. **TTS** — the response is converted to the configured voice and streamed back to the caller.
+6. **Tool calls** — if the agent invokes a tool, Commune calls your webhook synchronously and injects the result before generating the next utterance.
+7. **Call ends** — on hangup, silence timeout, or max duration. Credits reconciled to actual usage.
+
+---
+
+## Writing an effective system prompt
+
+```
+You are Alex, a support agent for Acme Corp.
+
+Your job:
+- Help customers with order status, returns, and general questions.
+- If you need to look up an order, use the lookup_order tool.
+- Keep responses short — this is a phone call, not a chat.
+- Don't read long lists. Summarize.
+- If you can't help, offer to connect them to a human.
+
+Tone: Friendly, direct, professional. No filler phrases.
+```
+
+**Tips:**
+- Keep responses to 1–2 sentences. Long TTS responses sound robotic.
+- Tell the agent to use tools by name.
+- Set `firstMessage` so the caller immediately knows they've reached the right place.
+- Use `idleTimeoutMs` to handle silent callers (default 10 seconds is usually right).
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Tools" icon="wrench" href="/phone/tools">
+  Give your voice agent the ability to look up data and take actions.
+</Card>
+
+<Card title="Voice Calls" icon="phone" href="/phone/voice-calls">
+  Initiate outbound calls and review call history.
+</Card>
+
+<Card title="Phone Numbers" icon="mobile" href="/phone/phone-numbers">
+  Manage the numbers your voice agents run on.
+</Card>
+
+<Card title="SMS & MMS" icon="message" href="/phone/sms">
+  Add two-way text messaging alongside voice for your agents.
+</Card>
+
+</Columns>

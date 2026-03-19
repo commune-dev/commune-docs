@@ -1,0 +1,165 @@
+---
+title: How do I use Commune with the OpenAI Agents SDK?
+description: Add email send, inbox read, and reply handling to OpenAI Agents SDK agents using Commune's Python client.
+---
+
+## Short answer
+
+Install `commune-mail` and `openai-agents`. Wrap your Commune calls in `@function_tool` decorated functions. Pass those functions to `Agent(tools=[...])` and the agent decides when to call them.
+
+## Step 1: Install and configure
+
+```bash
+pip install openai-agents commune-mail
+```
+
+Add your credentials to `.env`:
+
+```bash
+COMMUNE_API_KEY=comm_...
+COMMUNE_INBOX_ID=inbox_...
+```
+
+Initialize the client at the top of your agent file:
+
+```python
+import os
+from commune import CommuneClient
+
+client = CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+INBOX_ID = os.environ["COMMUNE_INBOX_ID"]
+```
+
+## Step 2: Define email tools
+
+Wrap each Commune operation in a `@function_tool` function. The SDK uses the docstring and type annotations to describe the tool to the model.
+
+```python
+from agents import function_tool
+
+@function_tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email from the agent's inbox."""
+    result = client.messages.send(
+        inbox_id=INBOX_ID,
+        to=to,
+        subject=subject,
+        text=body,
+    )
+    return f"Sent. Message ID: {result.id}"
+
+
+@function_tool
+def read_inbox(limit: int = 10) -> str:
+    """Read the most recent messages in the agent's inbox."""
+    messages = client.messages.list(inbox_id=INBOX_ID, limit=limit)
+    if not messages:
+        return "Inbox is empty."
+    lines = []
+    for m in messages:
+        lines.append(f"[{m.id}] From: {m.from_address} | Subject: {m.subject}")
+    return "\n".join(lines)
+
+
+@function_tool
+def get_thread(message_id: str) -> str:
+    """Fetch all messages in a thread by any message ID in that thread."""
+    thread = client.messages.get_thread(inbox_id=INBOX_ID, message_id=message_id)
+    parts = []
+    for m in thread:
+        parts.append(
+            f"---\nFrom: {m.from_address}\nSubject: {m.subject}\n\n{m.text}\n"
+        )
+    return "\n".join(parts)
+```
+
+## Step 3: Create the agent
+
+Inject the inbox email address into the system prompt so the agent knows its own identity.
+
+```python
+from agents import Agent
+
+inbox = client.inboxes.get(inbox_id=INBOX_ID)
+
+email_agent = Agent(
+    name="EmailAgent",
+    instructions=(
+        f"You are an email assistant. Your inbox address is {inbox.email}. "
+        "Use send_email to send messages, read_inbox to check for new mail, "
+        "and get_thread to read a full conversation before replying."
+    ),
+    tools=[send_email, read_inbox, get_thread],
+    model="gpt-4o",
+)
+```
+
+## Step 4: Run the agent
+
+```python
+from agents import Runner
+
+result = Runner.run_sync(
+    email_agent,
+    "Check my inbox and reply to any unanswered questions from the last 5 emails.",
+)
+
+print(result.final_output)
+```
+
+The agent calls `read_inbox` first, then `get_thread` on any message that needs context, then `send_email` to reply. It chains those calls on its own — you don't orchestrate the order.
+
+## Step 5: Handle inbound replies
+
+Register a webhook in your Commune dashboard so replies trigger your agent automatically.
+
+```python
+from fastapi import FastAPI, Request
+from agents import Agent, Runner
+
+app = FastAPI()
+
+@app.post("/webhook/email")
+async def handle_inbound(request: Request):
+    payload = await request.json()
+    message = payload["message"]
+
+    # Pull full thread context before handing to the agent
+    thread = client.messages.get_thread(
+        inbox_id=INBOX_ID,
+        message_id=message["id"],
+    )
+    thread_text = "\n\n".join(
+        f"From: {m['fromAddress']}\n{m['text']}" for m in thread
+    )
+
+    prompt = (
+        f"A new reply arrived in your inbox.\n\n"
+        f"Thread so far:\n{thread_text}\n\n"
+        f"Latest message from {message['fromAddress']}:\n{message['text']}\n\n"
+        "Read the thread, then send an appropriate reply."
+    )
+
+    await Runner.run(email_agent, prompt)
+    return {"ok": True}
+```
+
+Point your webhook URL to this endpoint from the Commune dashboard under **Inboxes → Webhooks**.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="OpenAI Agents SDK and Email" icon="newspaper" href="/blog/openai-agents-sdk-email">
+  Deeper walkthrough with a full outbound SDR example using the OpenAI Agents SDK.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Create and manage agent inboxes with per-inbox reputation and reply routing.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Configure inbound email delivery, retry behavior, and signature verification.
+</Card>
+
+</Columns>

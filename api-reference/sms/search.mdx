@@ -1,0 +1,115 @@
+---
+title: "Search SMS Messages"
+api: "GET /v1/sms/search"
+description: "Semantic vector search across your SMS messages. Find conversations by meaning, not just keywords."
+---
+
+<Note>
+This feature requires the **Agent Pro** plan or higher. Attempting to use semantic search on the free plan returns `403 plan_upgrade_required`.
+</Note>
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const results = await commune.sms.search({
+  query: 'customer asking about delivery status',
+  limit: 10,
+});
+
+for (const result of results) {
+  console.log(result.message_id, result.content);
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+results = client.sms.search(
+    query="customer asking about delivery status",
+    limit=10,
+)
+
+for result in results:
+    print(result.message_id, result.content)
+```
+```bash MCP
+search_sms(
+  query="customer asking about delivery status",
+  limit=10
+)
+```
+```bash cURL
+curl "https://api.commune.email/v1/sms/search?q=customer+asking+about+delivery+status&limit=10" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune sms search --query "customer asking about delivery status"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "message_id": "sms_SMabc123def456",
+      "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+      "direction": "inbound",
+      "content": "Hey, where is my order? It was supposed to arrive yesterday.",
+      "created_at": "2026-02-24T09:00:00.000Z",
+      "metadata": {
+        "delivery_status": "delivered",
+        "from_number": "+14155559999",
+        "to_number": "+18005550001",
+        "phone_number_id": "pn_01abc123",
+        "message_sid": "SMabc123def456",
+        "credits_charged": 1,
+        "sms_segments": 1,
+        "has_attachments": false,
+        "mms_media": null,
+        "delivery_data": null
+      }
+    }
+  ]
+}
+```
+```json 400 Missing Query
+{
+  "error": "q query param required"
+}
+```
+```json 403 Plan Required
+{
+  "error": "plan_upgrade_required",
+  "feature": "semanticSearch"
+}
+```
+</ResponseExample>
+
+## Query Parameters
+
+<ParamField query="q" type="string" required>
+  Natural language search query. The search uses vector embeddings — you can describe what you are looking for semantically (e.g., "angry customers", "appointment confirmations", "shipping inquiries") rather than matching exact keywords.
+</ParamField>
+
+<ParamField query="phone_number_id" type="string">
+  Restrict search to messages on a specific phone number. Format: `pn_...`. If omitted, searches across all phone numbers in your organization.
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Maximum results to return. Maximum: 50.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="SmsMessage[]">
+  Array of messages ranked by semantic relevance to your query. Results are sorted by similarity score, most relevant first. See [List SMS Messages](/api-reference/sms/list) for the full message schema.
+</ResponseField>
+
+<Note>
+Messages are indexed for vector search asynchronously after they are sent or received. There may be a short delay (typically under 5 seconds) before newly received messages appear in search results.
+</Note>

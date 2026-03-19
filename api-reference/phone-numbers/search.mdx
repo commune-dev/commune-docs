@@ -1,0 +1,165 @@
+---
+title: "Search Available Numbers"
+api: "GET /v1/phone-numbers/available"
+description: "Search for available phone numbers to purchase. Filter by country, type, area code, and capabilities."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const results = await commune.phoneNumbers.search({
+  country: 'US',
+  type: 'TollFree',
+  capabilities: { sms: true },
+});
+
+console.log(results[0].phoneNumber);  // +18005550001
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+results = client.phone_numbers.search(
+    country="US",
+    type="TollFree",
+    capabilities={"sms": True},
+)
+
+print(results[0].phone_number)  # +18005550001
+```
+```bash MCP
+search_available_phone_numbers(
+  country="US",
+  type="TollFree",
+  sms_enabled=True
+)
+```
+```bash cURL
+curl -G https://api.commune.email/v1/phone-numbers/available \
+  -H "Authorization: Bearer comm_..." \
+  -d "country=US" \
+  -d "type=TollFree" \
+  -d "sms_enabled=true"
+```
+```bash CLI
+commune phone-numbers search --country US --type TollFree
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "phoneNumber": "+18005550001",
+      "friendlyName": "(800) 555-0001",
+      "region": null,
+      "isoCountry": "US",
+      "capabilities": {
+        "sms": true,
+        "mms": true,
+        "voice": true
+      },
+      "beta": false
+    },
+    {
+      "phoneNumber": "+18335550002",
+      "friendlyName": "(833) 555-0002",
+      "region": null,
+      "isoCountry": "US",
+      "capabilities": {
+        "sms": true,
+        "mms": false,
+        "voice": true
+      },
+      "beta": false
+    }
+  ]
+}
+```
+```json 403 Plan Upgrade Required
+{
+  "error": "plan_upgrade_required",
+  "feature": "smsMessaging"
+}
+```
+</ResponseExample>
+
+## Query Parameters
+
+<ParamField query="country" type="string" default="US">
+  ISO-3166 alpha-2 country code. Examples: `US`, `CA`, `GB`.
+</ParamField>
+
+<ParamField query="type" type="string" default="TollFree">
+  Number type. One of: `Local`, `TollFree`. Toll-free numbers do not require A2P 10DLC registration for US sending.
+</ParamField>
+
+<ParamField query="area_code" type="string">
+  Filter local numbers by area code (e.g., `415`). Only applies when `type=Local`.
+</ParamField>
+
+<ParamField query="sms_enabled" type="boolean" default="true">
+  Only return numbers with SMS capability.
+</ParamField>
+
+<ParamField query="mms_enabled" type="boolean">
+  Only return numbers with MMS capability. MMS is supported on US and CA numbers only.
+</ParamField>
+
+<ParamField query="contains" type="string">
+  Filter numbers containing a specific digit pattern (e.g., `555`).
+</ParamField>
+
+<ParamField query="in_region" type="string">
+  Filter by state/region code (e.g., `CA` for California). Only applies to local numbers.
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Maximum number of results to return. Maximum: 20.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="AvailableNumber[]">
+  Array of available phone numbers matching your criteria.
+
+  <Expandable title="AvailableNumber properties" defaultOpen>
+    <ResponseField name="phoneNumber" type="string">
+      The phone number in E.164 format (e.g., `+18005550001`).
+    </ResponseField>
+    <ResponseField name="friendlyName" type="string">
+      Human-readable number format (e.g., `(800) 555-0001`).
+    </ResponseField>
+    <ResponseField name="region" type="string | null">
+      State or region code for local numbers. `null` for toll-free.
+    </ResponseField>
+    <ResponseField name="isoCountry" type="string">
+      ISO-3166 country code of the number.
+    </ResponseField>
+    <ResponseField name="capabilities" type="object">
+      <Expandable title="properties">
+        <ResponseField name="sms" type="boolean">
+          Whether the number can send and receive SMS.
+        </ResponseField>
+        <ResponseField name="mms" type="boolean">
+          Whether the number can send and receive MMS.
+        </ResponseField>
+        <ResponseField name="voice" type="boolean">
+          Whether the number supports voice calls.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="beta" type="boolean">
+      Whether the number is in beta with Twilio. Beta numbers may have limited availability.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+SMS messaging requires the **Agent Pro** plan or higher. The free plan includes `smsMessaging` access with 200 included credits per month.
+</Note>

@@ -1,0 +1,207 @@
+---
+title: "Send email"
+api: "POST /v1/messages/send"
+description: "Send an outbound email from one of your agent's inboxes."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const result = await commune.messages.send({
+  to: 'customer@example.com',
+  subject: 'Your order is confirmed',
+  html: '<p>Hi! Your order #12345 has been confirmed.</p>',
+  text: 'Hi! Your order #12345 has been confirmed.',
+  inboxId: 'inbox_abc123',
+});
+
+console.log(result.data.id);         // resend message id
+console.log(result.data.thread_id);  // thread_abc123
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.messages.send(
+    to="customer@example.com",
+    subject="Your order is confirmed",
+    html="<p>Hi! Your order #12345 has been confirmed.</p>",
+    text="Hi! Your order #12345 has been confirmed.",
+    inbox_id="inbox_abc123",
+)
+
+print(result.data.thread_id)  # thread_abc123
+```
+```bash MCP
+send_email(
+  to="customer@example.com",
+  subject="Your order is confirmed",
+  body="Hi! Your order #12345 has been confirmed."
+)
+```
+```bash cURL
+curl -X POST https://api.commune.email/v1/messages/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "customer@example.com",
+    "subject": "Your order is confirmed",
+    "html": "<p>Hi! Your order #12345 has been confirmed.</p>",
+    "text": "Hi! Your order #12345 has been confirmed.",
+    "inbox_id": "inbox_abc123"
+  }'
+```
+```bash CLI
+commune messages send \
+  --to "customer@example.com" \
+  --subject "Your order is confirmed" \
+  --body "Hi! Your order #12345 has been confirmed."
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "id": "49a3999c-0ce1-4ea6-ab68-e08a5c73e498",
+    "thread_id": "thread_f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "smtp_message_id": "<49a3999c-0ce1-4ea6-ab68-e08a5c73e498@resend.dev>"
+  }
+}
+```
+```json 200 With validation warnings
+{
+  "data": {
+    "id": "49a3999c-0ce1-4ea6-ab68-e08a5c73e498",
+    "thread_id": "thread_f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "smtp_message_id": "<49a3999c-0ce1-4ea6-ab68-e08a5c73e498@resend.dev>"
+  },
+  "validation": {
+    "warnings": ["role@example.com is a role address and may not deliver well"],
+    "suppressed": ["unsubscribed@example.com"],
+    "duration_ms": 142
+  }
+}
+```
+```json 400 Bad Request
+{
+  "error": "validation_error",
+  "message": "subject is required"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Body
+
+<ParamField body="to" type="string | string[]" required>
+  Recipient email address or array of recipient addresses. At least one recipient is required. Each address may be up to 320 characters.
+</ParamField>
+
+<ParamField body="subject" type="string" required>
+  Email subject line. Maximum 500 characters. CRLF characters are stripped automatically.
+</ParamField>
+
+<ParamField body="html" type="string">
+  HTML body of the email. Maximum 10 MB. At least one of `html` or `text` is required.
+</ParamField>
+
+<ParamField body="text" type="string">
+  Plain text fallback body. Maximum 10 MB. At least one of `html` or `text` is required.
+</ParamField>
+
+<ParamField body="from" type="string">
+  Override the sender address. Must be a valid email address. When omitted, Commune resolves the sender from the `inbox_id` or `domain_id` provided. If neither is given, the default sending address for your account is used.
+</ParamField>
+
+<ParamField body="inbox_id" type="string">
+  ID of the inbox to send from. Commune automatically resolves the `from` address and domain from this inbox. Recommended over `domain_id` when you have per-agent inboxes.
+
+  Accepts either `inbox_id` or `inboxId`.
+</ParamField>
+
+<ParamField body="domain_id" type="string">
+  ID of the domain to send from when no `inbox_id` is provided. Commune constructs the sender address using your account's default local part and this domain.
+
+  Accepts either `domain_id` or `domainId`.
+</ParamField>
+
+<ParamField body="thread_id" type="string">
+  Existing thread to reply within. When set, Commune automatically sets `In-Reply-To` and `References` headers so the message threads correctly in the recipient's email client. The subject is also prefixed with `Re:` automatically.
+</ParamField>
+
+<ParamField body="cc" type="string | string[]">
+  CC recipients. Accepts a single address or an array.
+</ParamField>
+
+<ParamField body="bcc" type="string | string[]">
+  BCC recipients. Accepts a single address or an array.
+</ParamField>
+
+<ParamField body="reply_to" type="string">
+  Custom Reply-To address. When omitted, Commune sets a routing-token-encoded Reply-To automatically so inbound replies map back to the correct thread. Accepts either `reply_to` or `replyTo`.
+</ParamField>
+
+<ParamField body="attachments" type="string[] | object[]">
+  Attachments to include with the email. Each element can be either an `attachment_id` string (from the [Upload attachment](/api-reference/attachments/upload) endpoint) or an inline attachment object.
+
+  <Expandable title="Inline attachment object properties">
+    <ParamField body="filename" type="string" required>
+      Filename shown to the recipient. CRLF characters are stripped.
+    </ParamField>
+    <ParamField body="content" type="string" required>
+      Base64-encoded file content.
+    </ParamField>
+    <ParamField body="content_type" type="string">
+      MIME type of the attachment (e.g. `application/pdf`).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="headers" type="object">
+  Custom email headers as a key-value map. Keys and values are sanitized (CRLF stripped). Standard headers like `Message-ID`, `In-Reply-To`, and `References` are managed by Commune and will be overwritten.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      The Resend message ID. This is the identifier your recipient's email client will see. Format: UUID string.
+    </ResponseField>
+    <ResponseField name="thread_id" type="string">
+      Thread this message belongs to. If you supplied a `thread_id` in the request, this echoes it back. Otherwise a new thread ID is generated. Format: `thread_<uuid>`.
+    </ResponseField>
+    <ResponseField name="smtp_message_id" type="string">
+      Full RFC 5322 Message-ID header value as seen by the recipient. Format: `<id@resend.dev>`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="validation" type="object">
+  Present only when some recipients were warned, rejected, or suppressed. A non-null `validation` object does not mean the send failed — it means at least one recipient had an issue while others were sent successfully.
+
+  <Expandable title="properties">
+    <ResponseField name="rejected" type="string[]">
+      Recipient addresses that failed hard validation (invalid syntax, no MX record) and were not sent to.
+    </ResponseField>
+    <ResponseField name="warnings" type="string[]">
+      Addresses that passed but triggered soft warnings (role addresses, disposable domains). These recipients still received the email.
+    </ResponseField>
+    <ResponseField name="suppressed" type="string[]">
+      Addresses that are on your suppression list (bounced, unsubscribed). These recipients were silently skipped.
+    </ResponseField>
+    <ResponseField name="duration_ms" type="number">
+      Time in milliseconds taken to validate all recipients.
+    </ResponseField>
+  </Expandable>
+</ResponseField>

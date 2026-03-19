@@ -1,0 +1,148 @@
+---
+title: "Create domain"
+api: "POST /v1/domains"
+description: "Register a custom domain for sending and receiving email."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const domain = await commune.domains.create({
+  domain: 'mycompany.com',
+});
+
+console.log(domain.data.id);      // domain ID
+console.log(domain.data.status);  // pending
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+domain = client.domains.create(domain="mycompany.com")
+
+print(domain.data.id)
+print(domain.data.status)
+```
+```bash MCP
+create_domain(domain="mycompany.com")
+```
+```bash cURL
+curl -X POST https://api.commune.email/v1/domains \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "mycompany.com"
+  }'
+```
+```bash CLI
+commune domains create --domain "mycompany.com"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 Created
+{
+  "data": {
+    "id": "domain_xyz789",
+    "name": "mycompany.com",
+    "status": "pending",
+    "region": "us-east-1",
+    "records": [
+      {
+        "type": "MX",
+        "name": "mycompany.com",
+        "value": "feedback-smtp.us-east-1.amazonses.com",
+        "priority": 10,
+        "ttl": 300,
+        "status": "not_started"
+      },
+      {
+        "type": "TXT",
+        "name": "resend._domainkey.mycompany.com",
+        "value": "p=MIGfMA0GCSq...",
+        "ttl": 300,
+        "status": "not_started"
+      }
+    ],
+    "createdAt": "2026-02-25T10:00:00.000Z"
+  }
+}
+```
+```json 400 Bad Request
+{
+  "error": "Missing required field: name"
+}
+```
+```json 403 Plan Limit Reached
+{
+  "error": "Custom domain limit reached (1/1). Upgrade your plan for more.",
+  "current_count": 1,
+  "limit": 1,
+  "current_tier": "free",
+  "upgrade_url": "/dashboard/billing"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Body
+
+<ParamField body="name" type="string" required>
+  The domain name to register (e.g. `"mycompany.com"`). Must be a valid domain you control so you can add DNS records.
+</ParamField>
+
+<ParamField body="region" type="string">
+  AWS region for the domain's sending infrastructure. One of: `us-east-1`, `eu-west-1`. Defaults to `us-east-1`.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Unique domain identifier. Pass this as `domain_id` when creating inboxes or sending email.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      The registered domain name.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Verification status. `"pending"` until DNS records are verified. After calling [Verify domain](/api-reference/domains/verify), this transitions to `"verified"` or remains `"pending"` if DNS hasn't propagated yet.
+    </ResponseField>
+    <ResponseField name="region" type="string">
+      AWS region for this domain's sending infrastructure.
+    </ResponseField>
+    <ResponseField name="records" type="object[]">
+      DNS records you must add to your domain registrar to complete verification.
+
+      <Expandable title="Record properties">
+        <ResponseField name="type" type="string">DNS record type. Examples: `MX`, `TXT`, `CNAME`.</ResponseField>
+        <ResponseField name="name" type="string">DNS record name/host.</ResponseField>
+        <ResponseField name="value" type="string">DNS record value to set.</ResponseField>
+        <ResponseField name="priority" type="number">MX record priority. Only present for MX records.</ResponseField>
+        <ResponseField name="ttl" type="number">Recommended TTL in seconds.</ResponseField>
+        <ResponseField name="status" type="string">Verification status for this individual record. One of: `not_started`, `pending`, `verified`, `failed`.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 creation timestamp.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Next steps
+
+After creating a domain:
+
+1. Add the DNS records shown in `data.records` to your domain registrar.
+2. Wait for DNS propagation (usually a few minutes to a few hours).
+3. Call [Verify domain](/api-reference/domains/verify) to trigger verification.
+4. Once `status` is `"verified"`, create inboxes and start sending.

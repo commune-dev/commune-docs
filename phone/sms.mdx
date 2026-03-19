@@ -1,0 +1,666 @@
+---
+title: "SMS & MMS"
+description: "Send and receive text messages through your agent's phone number. Two-way conversations, delivery tracking, compliance, and semantic search built in."
+---
+
+SMS gives your agent a direct line to people's phones — no app installs, no accounts, no friction. It's the highest-read communication channel available. Commune's SMS API handles message routing, delivery tracking, conversation threading, compliance (STOP/UNSTOP), and suppression automatically.
+
+## What SMS enables for agents
+
+- **Outbound messaging** — send notifications, confirmations, reminders, alerts
+- **Two-way conversations** — receive replies, maintain context across a thread
+- **MMS** — send images, documents, PDFs, and media alongside text
+- **Delivery visibility** — know exactly when a message was delivered or why it failed
+- **Compliance by default** — STOP replies are respected automatically, no manual work needed
+- **Per-number threading** — every conversation between your number and a contact is a discrete thread
+- **Semantic search** — search across all SMS history with natural language (Business+)
+
+## How conversations work
+
+Every SMS exchange is organized into a **conversation thread** keyed by `(your_number, contact_number)`. When you send a message, it's added to that thread. When the contact replies, their message is added to the same thread. Your agent always has full context.
+
+Thread IDs are deterministic — the same `(phone_number_id, contact_number)` pair always produces the same 32-character hex thread ID. The thread ID is returned in every send response and inbound webhook payload; pass it on subsequent sends to keep replies grouped.
+
+## SMS vs MMS
+
+| | SMS | MMS |
+|--|-----|-----|
+| Content | Text only (up to 160 chars/segment) | Text + media (images, video, PDF, audio) |
+| Max message size | 1,600 chars (10 segments) | 5 MB |
+| US/CA outbound cost | 2 credits/segment | 5 credits |
+| Delivery | Universal | Supported by all modern carriers |
+
+Long text messages over 160 characters are automatically split into segments and reassembled by the recipient's device. Smart encoding (GSM-7) reduces segment count where possible.
+
+---
+
+## The SMS message object
+
+```json
+{
+  "message_id": "sms_01abc123",
+  "thread_id": "a3f1c8...",
+  "direction": "outbound",
+  "content": "Your appointment is confirmed for Monday at 2pm.",
+  "created_at": "2024-01-15T12:00:00Z",
+  "metadata": {
+    "delivery_status": "delivered",
+    "from_number": "+14155550001",
+    "to_number": "+14155559999",
+    "phone_number_id": "pn_01abc123",
+    "message_sid": "SM123abc",
+    "credits_charged": 2,
+    "sms_segments": 1,
+    "has_attachments": false,
+    "mms_media": [],
+    "delivery_data": {
+      "sent_at": "2024-01-15T12:00:01Z",
+      "delivered_at": "2024-01-15T12:00:03Z"
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message_id` | string | Unique message identifier |
+| `thread_id` | string | Conversation thread between two numbers |
+| `direction` | string | `inbound` or `outbound` |
+| `content` | string | Message body text |
+| `created_at` | string | ISO 8601 timestamp |
+| `metadata.delivery_status` | string | See [delivery statuses](#delivery-statuses) |
+| `metadata.from_number` | string | Sender <Tooltip tip="E.164 is the international phone number format: + followed by country code and number, no spaces or dashes">E.164</Tooltip> number |
+| `metadata.to_number` | string | Recipient E.164 number |
+| `metadata.phone_number_id` | string | Your Commune number's ID |
+| `metadata.message_sid` | string | Carrier-level message SID |
+| `metadata.credits_charged` | number | Credits deducted for this message |
+| `metadata.sms_segments` | number | Number of 160-char segments used |
+| `metadata.has_attachments` | boolean | Whether media was included (MMS) |
+| `metadata.mms_media` | object[] | Array of `{ url, contentType }` for MMS |
+| `metadata.delivery_data` | object | Timestamps and error details from carrier |
+
+---
+
+## Send an SMS
+
+<CodeGroup>
+
+```typescript TypeScript
+const message = await commune.sms.send({
+  phone_number_id: 'pn_01abc123',  // your Commune number ID
+  to: '+14155559999',
+  body: 'Your appointment is confirmed for Monday at 2pm.',
+});
+
+console.log(message.message_id);      // sms_SM01abc123
+console.log(message.status);          // accepted
+console.log(message.credits_charged); // 2
+```
+
+```python Python
+message = client.sms.send(
+    to="+14155559999",
+    body="Your appointment is confirmed for Monday at 2pm.",
+    phone_number_id="pn_01abc123",
+)
+
+print(message.message_id)
+print(message.status)          # accepted
+print(message.credits_charged) # 2
+```
+
+```bash MCP
+send_sms(
+  phone_number_id="pn_01abc123",
+  to="+14155559999",
+  body="Your appointment is confirmed for Monday at 2pm."
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/sms/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number_id": "pn_01abc123",
+    "to": "+14155559999",
+    "body": "Your appointment is confirmed for Monday at 2pm."
+  }'
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `to` | string | Yes | Recipient E.164 number (e.g. `+14155559999`) |
+| `body` | string | Yes* | Message text (max 1,600 chars). Required if no `media_url`. |
+| `phone_number_id` | string | No | Your Commune number's ID. Uses first active number if omitted. |
+| `media_url` | string[] | No | Media URLs for MMS (up to 10). Images, PDFs, video. |
+| `validity_period` | number | No | Seconds before undelivered message expires (1–14400) |
+
+<Note>
+Either `body` or `media_url` (or both) must be provided.
+</Note>
+
+### Response
+
+```json
+{
+  "data": {
+    "message_id": "sms_SM01abc123",
+    "thread_id": "a3f1c8e3eb60e719...",
+    "message_sid": "SM01abc123",
+    "status": "accepted",
+    "credits_charged": 2,
+    "segments": 1
+  }
+}
+```
+
+---
+
+## Send an MMS (with media)
+
+<CodeGroup>
+
+```typescript TypeScript
+const message = await commune.sms.send({
+  phone_number_id: 'pn_01abc123',
+  to: '+14155559999',
+  body: 'Here is your invoice.',
+  media_url: ['https://your-server.com/invoice-1234.pdf'],
+});
+```
+
+```python Python
+message = client.sms.send(
+    to="+14155559999",
+    body="Here is your invoice.",
+    phone_number_id="pn_01abc123",
+    media_url=["https://your-server.com/invoice-1234.pdf"],
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/sms/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number_id": "pn_01abc123",
+    "to": "+14155559999",
+    "body": "Here is your invoice.",
+    "media_url": ["https://your-server.com/invoice-1234.pdf"]
+  }'
+```
+
+</CodeGroup>
+
+<Tip>
+Media URLs must be publicly accessible. Commune fetches and delivers the media to the carrier at send time. Supported types: JPEG, PNG, GIF, WebP, MP4, PDF, MP3.
+</Tip>
+
+---
+
+## List messages
+
+<CodeGroup>
+
+```typescript TypeScript
+const messages = await commune.sms.list({
+  phone_number_id: 'pn_01abc123',
+  limit: 50,
+});
+```
+
+```python Python
+messages = client.sms.messages.list(
+    phone_number_id="pn_01abc123",
+    limit=50,
+)
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/sms?phone_number_id=pn_01abc123&limit=50" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `phone_number_id` | string | Filter by your Commune number. Omit to list all org SMS. |
+| `limit` | number | Max results (default 20, max 100) |
+| `before` | string | ISO timestamp — return messages before this time |
+| `after` | string | ISO timestamp — return messages after this time |
+
+---
+
+## List conversations
+
+Get all conversation threads for a phone number, grouped by contact number and sorted by most recent activity.
+
+<CodeGroup>
+
+```typescript TypeScript
+const conversations = await commune.sms.conversations({
+  phone_number_id: 'pn_01abc123',
+});
+
+conversations.forEach(c => {
+  console.log(c.remote_number, c.last_message_preview, c.unread_count);
+});
+```
+
+```python Python
+conversations = client.sms.conversations(
+    phone_number_id="pn_01abc123",
+)
+
+for c in conversations:
+    print(c.remote_number, c.last_message_preview)
+```
+
+```bash MCP
+list_sms_conversations(phone_number_id="pn_01abc123")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/sms/conversations?phone_number_id=pn_01abc123" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "thread_id": "a3f1c8...",
+      "remote_number": "+14155559999",
+      "last_message_at": "2024-01-15T10:05:00Z",
+      "last_message_preview": "Thanks! Can I reschedule to Tuesday?",
+      "message_count": 8,
+      "unread_count": 1
+    }
+  ],
+  "next_cursor": "eyJ0aW1lc3RhbXAiOi4uLn0"
+}
+```
+
+Pass `cursor` as a query parameter to paginate through results.
+
+---
+
+## Get a conversation thread
+
+Retrieve the full back-and-forth between your number and a contact, ordered chronologically.
+
+<CodeGroup>
+
+```typescript TypeScript
+const thread = await commune.sms.thread('+14155559999', 'pn_01abc123');
+
+thread.forEach(msg => {
+  console.log(`[${msg.direction}] ${msg.content}`);
+});
+```
+
+```python Python
+thread = client.sms.thread(
+    "+14155559999",
+    phone_number_id="pn_01abc123",
+)
+
+for msg in thread:
+    print(f"[{msg.direction}] {msg.content}")
+```
+
+```bash MCP
+get_sms_thread(
+  remote_number="+14155559999",
+  phone_number_id="pn_01abc123"
+)
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/sms/conversations/%2B14155559999?phone_number_id=pn_01abc123" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "message_id": "sms_01abc100",
+      "direction": "outbound",
+      "content": "Your appointment is confirmed for Monday at 2pm.",
+      "created_at": "2024-01-15T10:00:00Z",
+      "metadata": { "delivery_status": "delivered" }
+    },
+    {
+      "message_id": "sms_01abc101",
+      "direction": "inbound",
+      "content": "Thanks! Can I reschedule to Tuesday?",
+      "created_at": "2024-01-15T10:05:00Z",
+      "metadata": { "delivery_status": "delivered" }
+    }
+  ],
+  "thread_id": "a3f1c8..."
+}
+```
+
+---
+
+## Receiving inbound SMS
+
+Set a webhook on your phone number to receive inbound messages in real time:
+
+```typescript
+await commune.phoneNumbers.update('pn_01abc123', {
+  webhook: { url: 'https://your-server.com/webhooks/sms' },
+});
+```
+
+When an inbound message arrives, Commune POSTs to your webhook:
+
+```json
+{
+  "event": { "type": "sms.received" },
+  "phone_number_id": "pn_01abc123",
+  "from_number": "+14155559999",
+  "to_number": "+14155550001",
+  "body": "Can I reschedule to Tuesday?",
+  "thread_id": "a3f1c8...",
+  "message": {
+    "message_id": "sms_01abc101",
+    "direction": "inbound",
+    "content": "Can I reschedule to Tuesday?",
+    "metadata": {
+      "from_number": "+14155559999",
+      "to_number": "+14155550001",
+      "phone_number_id": "pn_01abc123"
+    }
+  }
+}
+```
+
+Reply using the same `thread_id` and `from`/`to` reversed:
+
+<CodeGroup>
+
+```typescript TypeScript
+app.post('/webhooks/sms', express.json(), async (req, res) => {
+  const { message, thread_id } = req.body;
+  if (message.direction !== 'inbound') return res.json({ ok: true });
+
+  await commune.sms.send({
+    phone_number_id: message.metadata.phone_number_id,  // your number
+    to: message.metadata.from_number,                   // the contact
+    body: 'Sure! I have you rescheduled for Tuesday at 2pm.',
+  });
+
+  res.json({ ok: true });
+});
+```
+
+```python Python
+@app.route("/webhooks/sms", methods=["POST"])
+def handle_sms():
+    data = request.json
+    message = data["message"]
+    if message["direction"] != "inbound":
+        return jsonify(ok=True)
+
+    client.sms.send(
+        to=message["metadata"]["from_number"],
+        body="Sure! I have you rescheduled for Tuesday at 2pm.",
+        phone_number_id=message["metadata"]["phone_number_id"],
+    )
+
+    return jsonify(ok=True)
+```
+
+</CodeGroup>
+
+---
+
+## Delivery statuses
+
+| Status | Meaning |
+|--------|---------|
+| `queued` | Accepted, awaiting carrier handoff |
+| `sent` | Handed off to the carrier |
+| `delivered` | Confirmed delivered to the device (also set on all inbound messages) |
+| `failed` | Could not send — invalid number, carrier error, or undeliverable |
+| `blocked` | Blocked by allow/block list |
+
+<Tip>
+`delivered` confirmation requires carrier support. Most US carriers provide delivery receipts. International delivery receipts vary by country.
+</Tip>
+
+---
+
+## Compliance and opt-outs
+
+Commune automatically handles SMS compliance:
+
+- **STOP replies** — when a contact replies with STOP (or STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT), they are added to your suppression list and no further messages are sent to them from any of your numbers
+- **START/UNSTOP replies** — automatically removes the number from suppressions
+- **Suppression list** — blocked numbers are enforced at the API level before any carrier call is made
+
+<Note>
+STOP messages are stored and delivered to your webhook so your agent can see them, but the suppression is added immediately. Any subsequent send attempt to a suppressed number returns `422 recipient_suppressed`.
+</Note>
+
+### View suppressions
+
+<CodeGroup>
+
+```typescript TypeScript
+const suppressions = await commune.sms.suppressions();
+suppressions.forEach(s => {
+  console.log(s.phone_number, s.reason, s.created_at);
+});
+```
+
+```python Python
+suppressions = client.sms.suppressions()
+for s in suppressions:
+    print(s.phone_number, s.reason, s.created_at)
+```
+
+```bash cURL
+curl https://api.commune.email/v1/sms/suppressions \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "phone_number": "+14155559999",
+      "phone_number_id": null,
+      "reason": "stop",
+      "created_at": "2024-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+`phone_number_id: null` means the suppression is org-wide (applies across all your numbers).
+
+### Remove a suppression
+
+Re-enable messaging to a number that previously opted out. Only do this with fresh explicit consent.
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.sms.suppressions.remove('+14155559999');
+```
+
+```python Python
+client.sms.suppressions.remove("+14155559999")
+```
+
+```bash cURL
+curl -X DELETE "https://api.commune.email/v1/sms/suppressions/%2B14155559999" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+<Warning>
+Removing a suppression for a number that sent STOP carries compliance risk. Ensure you have documented re-consent before messaging again.
+</Warning>
+
+---
+
+## Semantic search <Badge color="purple" size="sm">Business</Badge>
+
+Search your entire SMS history with natural language. Useful for agents that need to recall past conversations, check if a topic was discussed, or find messages from a specific contact.
+
+<Note>
+Semantic search is available on Business plan and higher.
+</Note>
+
+<CodeGroup>
+
+```typescript TypeScript
+const results = await commune.sms.search({
+  q: 'appointment reschedule',
+  phone_number_id: 'pn_01abc123',
+  limit: 10,
+});
+
+results.forEach(r => {
+  console.log(r.content, r.score);
+});
+```
+
+```python Python
+results = client.sms.search(
+    "appointment reschedule",
+    phone_number_id="pn_01abc123",
+    limit=10,
+)
+
+for r in results:
+    print(r.content, r.score)
+```
+
+```bash MCP
+search_sms(query="appointment reschedule", phone_number_id="pn_01abc123")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/sms/search?q=appointment+reschedule&phone_number_id=pn_01abc123" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Natural language search query |
+| `phone_number_id` | string | Filter results to a specific number |
+| `limit` | number | Max results (default 20, max 50) |
+
+---
+
+## Rate limits
+
+| Limit | Value | Scope |
+|-------|-------|-------|
+| Per-destination | 1 msg/second | Per `(org, recipient number)` |
+| Daily per number | 500 messages | Per phone number |
+| Daily total | 2,000 messages | Across all your numbers |
+| Monthly total | 20,000 messages | Across all your numbers |
+
+Daily and monthly limits can be adjusted from [Dashboard → Phone Settings](https://commune.email/dashboard/phone-settings).
+
+When a rate limit is hit, the API returns `429` with one of:
+
+- `sms_daily_limit_per_number` — exceeded per-number daily limit
+- `sms_daily_limit_total` — exceeded org daily limit
+- `sms_monthly_limit` — exceeded org monthly limit
+
+---
+
+## Sending at scale
+
+If your agent sends SMS to many contacts, follow these patterns:
+
+**Check suppressions first** — before sending to a bulk list, filter against your suppression list via `GET /v1/sms/suppressions`.
+
+**Use `thread_id`** — always pass `thread_id` for follow-up messages to keep context and avoid duplicate sends.
+
+**Respect the 1 msg/sec limit per contact** — add a delay between sends to the same contact.
+
+**Monitor delivery status** — set up a delivery webhook or poll message status to track failed messages and retry where appropriate.
+
+```typescript
+const contacts = ['+14155550002', '+14155550003', '+14155550004'];
+
+// Filter suppressions first
+const suppressions = await commune.sms.suppressions();
+const suppressed = new Set(suppressions.map(s => s.phone_number));
+
+for (const number of contacts) {
+  if (suppressed.has(number)) continue;
+
+  await commune.sms.send({
+    phone_number_id: 'pn_01abc123',
+    to: number,
+    body: 'Your report is ready. Reply STOP to unsubscribe.',
+  });
+
+  // 1 message/second per contact to stay within rate limits
+  await new Promise(r => setTimeout(r, 1000));
+}
+```
+
+---
+
+## Credits by country
+
+Outbound SMS costs per segment. Inbound is typically half the outbound rate.
+
+<Expandable title="Credits by country">
+
+| Region | Countries | SMS (per segment) | MMS |
+|--------|-----------|-------------------|-----|
+| North America | US, CA | 2 | 5 |
+| UK | GB | 8 | 12 |
+| Western Europe | DE, FR, ES, IT, NL, SE, NO, CH | 10 | 15 |
+| Australia / NZ | AU, NZ | 8 | 12 |
+| Asia Pacific | SG | 6 | 10 |
+| Asia Pacific | JP | 10 | 15 |
+| Asia Pacific | IN | 12 | 18 |
+| Latin America | MX | 12 | 18 |
+| Latin America | BR, CO | 15 | 22 |
+| Africa / Middle East | ZA | 15 | 22 |
+| Africa / Middle East | SA, AE | 18–20 | 27–30 |
+| Africa / Middle East | NG, KE | 20–22 | 30–33 |
+| Other | All other countries | 20 | 30 |
+
+</Expandable>
+
+Credits are purchased in bundles or included in your plan. See [Credits](/features/credits).

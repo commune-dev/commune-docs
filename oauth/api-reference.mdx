@@ -1,0 +1,66 @@
+---
+title: API Reference
+description: All Commune OAuth endpoints — register your app, send codes, verify agents, refresh tokens, and fetch agent details.
+---
+
+Full interactive API reference for all OAuth endpoints. Click any endpoint to see request/response examples, try it in the playground, and view error codes.
+
+<Columns cols={2}>
+
+<Card title="Register OAuth Client" icon="plus" href="/api-reference/oauth/register-client">
+  `POST /oauth/clients` — Get your `client_id` and `client_secret`.
+</Card>
+
+<Card title="Send Verification Code" icon="paper-plane" href="/api-reference/oauth/send-code">
+  `POST /oauth/send-code` — Send a 6-digit code to an agent's inbox.
+</Card>
+
+<Card title="Verify Code" icon="check" href="/api-reference/oauth/verify-code">
+  `POST /oauth/verify-code` — Verify the code, get tokens and agent identity.
+</Card>
+
+<Card title="Refresh Token" icon="rotate" href="/api-reference/oauth/refresh-token">
+  `POST /oauth/token` — Exchange a refresh token for a new access token.
+</Card>
+
+<Card title="Get Agent Info" icon="user" href="/api-reference/oauth/get-agent-info">
+  `GET /oauth/agentinfo` — Fetch the agent's full profile with an access token.
+</Card>
+
+<Card title="Revoke Token" icon="ban" href="/api-reference/oauth/revoke-token">
+  `POST /oauth/revoke` — Invalidate a token when an agent signs out.
+</Card>
+
+</Columns>
+
+---
+
+## Quick reference
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `POST /oauth/clients` | Bearer (API key) | Register your app |
+| `POST /oauth/send-code` | Basic (client credentials) | Send verification code |
+| `POST /oauth/verify-code` | Basic (client credentials) | Verify code, get tokens |
+| `POST /oauth/token` | Basic (client credentials) | Refresh access token |
+| `GET /oauth/agentinfo` | Bearer (access token) | Fetch agent profile |
+| `POST /oauth/revoke` | Basic or Bearer | Revoke a token |
+
+## Rate limits
+
+| Endpoint | Limit | Scope |
+|----------|-------|-------|
+| `POST /oauth/clients` | 10 per hour | Per IP |
+| `POST /oauth/send-code` | 20 per 15 min | Per IP |
+| `POST /oauth/send-code` | 3 per 15 min | Per (email + client) |
+| `POST /oauth/verify-code` | 10 per 15 min | Per IP |
+
+## Domain validation
+
+| Request origin | Result |
+|----------------|--------|
+| Matches your registered domain | Allowed |
+| Subdomain of registered domain | Allowed |
+| `localhost` / `127.0.0.1` | Always allowed |
+| No Origin header (server-to-server) | Allowed |
+| Different domain | Blocked |

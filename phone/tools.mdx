@@ -1,0 +1,292 @@
+---
+title: "Voice Tools"
+description: "Give your voice agents the ability to call external APIs during live calls."
+---
+
+Tools let your voice agent take real-world actions during a call — look up an order, check availability, create a ticket, or anything else your backend supports. When the agent calls a tool, Commune POSTs to your webhook, waits for the result, and continues the conversation.
+
+<Note>
+Tools require the **Agent Pro** plan or higher. Maximum 50 tools per organization.
+</Note>
+
+## The tool object
+
+```json
+{
+  "id": "tool_01abc123",
+  "name": "lookup_order",
+  "description": "Look up the status of a customer order by order ID.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "description": "The customer's order ID"
+      }
+    },
+    "required": ["order_id"]
+  },
+  "implementation": {
+    "type": "webhook",
+    "url": "https://yourapp.com/webhooks/voice-tools",
+    "method": "POST",
+    "headers": {},
+    "timeoutMs": 8000,
+    "retries": 1
+  },
+  "version": 1,
+  "lastTestedAt": "2024-01-15T12:00:00Z",
+  "lastTestResult": "success",
+  "lastTestDurationMs": 145,
+  "createdAt": "2024-01-15T12:00:00Z",
+  "updatedAt": "2024-01-15T12:00:00Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Tool name — alphanumeric + underscores, max 64 chars (`/^[a-zA-Z0-9_]{1,64}$/`) |
+| `description` | string | What the tool does — the agent reads this to decide when to call it |
+| `parameters` | object | JSON Schema describing the tool's input arguments |
+| `implementation.url` | string | HTTPS webhook URL Commune calls at runtime |
+| `implementation.method` | string | `POST` (default) or `GET` |
+| `implementation.headers` | object | Custom headers sent with every request |
+| `implementation.timeoutMs` | number | Request timeout in ms (1000–30000, default 8000) |
+| `implementation.retries` | number | Retry count on failure (0–3, default 1) |
+
+---
+
+## Create a tool
+
+```bash
+POST /v1/tools
+```
+
+```json
+{
+  "name": "lookup_order",
+  "description": "Look up the status of a customer order by order ID.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "description": "The customer's order ID"
+      }
+    },
+    "required": ["order_id"]
+  },
+  "webhook": {
+    "url": "https://yourapp.com/webhooks/voice-tools",
+    "method": "POST",
+    "timeoutMs": 8000,
+    "retries": 1
+  }
+}
+```
+
+**Response** `201`
+
+```json
+{
+  "data": { "id": "tool_01abc123", "name": "lookup_order", ... },
+  "webhookSecret": "a3f8b2c1d4e5f6..."
+}
+```
+
+<Warning>
+The `webhookSecret` is only shown once at creation. Save it immediately — you'll use it to verify Commune's requests to your webhook. It cannot be retrieved again.
+</Warning>
+
+---
+
+## List tools
+
+```bash
+GET /v1/tools
+```
+
+```json
+{
+  "data": [
+    { "id": "tool_01abc123", "name": "lookup_order", ... }
+  ]
+}
+```
+
+---
+
+## Get a tool
+
+```bash
+GET /v1/tools/:id
+```
+
+---
+
+## Update a tool
+
+```bash
+PATCH /v1/tools/:id
+```
+
+```json
+{
+  "description": "Updated description",
+  "webhook": {
+    "url": "https://yourapp.com/new-endpoint",
+    "timeoutMs": 5000
+  }
+}
+```
+
+All fields are optional. The webhook URL is re-validated for SSRF if changed.
+
+---
+
+## Delete a tool
+
+```bash
+DELETE /v1/tools/:id
+```
+
+Returns `409 Conflict` if the tool is currently assigned to one or more voice agents. Remove it from all agents first, then delete.
+
+---
+
+## Test a tool
+
+Test your tool webhook without making a live call. Commune sends a sample request to your endpoint and returns the response.
+
+```bash
+POST /v1/tools/:id/test
+```
+
+```json
+{
+  "args": {
+    "order_id": "12345"
+  }
+}
+```
+
+**Response**
+
+```json
+{
+  "data": {
+    "result": "success",
+    "statusCode": 200,
+    "durationMs": 145,
+    "response": { "status": "shipped", "tracking": "1Z..." },
+    "error": null
+  }
+}
+```
+
+`result` is `"success"` for 2xx responses, `"failure"` otherwise.
+
+---
+
+## Implementing your webhook
+
+When a voice agent calls a tool, Commune POSTs to your webhook URL:
+
+```json
+{
+  "tool": "lookup_order",
+  "args": { "order_id": "12345" },
+  "call_id": "call_01abc123",
+  "timestamp": 1705320000000
+}
+```
+
+Your endpoint should return a JSON object. The agent receives the entire response body as the tool result:
+
+```json
+{
+  "status": "shipped",
+  "tracking_number": "1Z999AA10123456784",
+  "estimated_delivery": "2024-01-17"
+}
+```
+
+**Performance matters** — the agent waits synchronously for your webhook response before speaking again. Aim for under 500ms. The default timeout is 8 seconds.
+
+---
+
+## Verifying webhook signatures
+
+Every request from Commune includes these headers:
+
+| Header | Value |
+|--------|-------|
+| `X-Commune-Timestamp` | Unix timestamp in milliseconds |
+| `X-Commune-Signature` | `sha256=<HMAC-SHA256 hex digest>` |
+
+To verify:
+
+```typescript
+import { createHmac } from 'crypto';
+
+function verifySignature(req: Request, secret: string): boolean {
+  const timestamp = req.headers['x-commune-timestamp'];
+  const signature = req.headers['x-commune-signature'];
+  const body = JSON.stringify(req.body);
+
+  const payload = `${timestamp}.${body}`;
+  const expected = 'sha256=' + createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+
+  return signature === expected;
+}
+```
+
+Reject requests where the timestamp is more than 5 minutes old to prevent replay attacks.
+
+---
+
+## Security
+
+- **HTTPS required** — Commune rejects any webhook URL using plain HTTP.
+- **No private IPs** — SSRF protection blocks URLs resolving to `10.x`, `192.168.x`, `172.16–31.x`, loopback, link-local, and CGNAT ranges.
+- **DNS re-validation** — The webhook URL is re-resolved at test time (prevents DNS rebinding attacks).
+- **Redirects blocked** — Commune does not follow redirects from webhook responses.
+
+---
+
+## Assigning tools to a voice agent
+
+After creating tools, attach them to a voice agent via `PUT /v1/phone-numbers/:id/voice-agent`:
+
+```json
+{
+  "systemPrompt": "You are a support agent...",
+  "toolIds": ["tool_01abc123", "tool_02def456"]
+}
+```
+
+The agent can use any assigned tool during a call. Reference tools by name in the system prompt so the agent knows when to use them.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Voice Agents" icon="microphone" href="/phone/voice-agents">
+  Attach tools to a voice agent and configure its system prompt.
+</Card>
+
+<Card title="Voice Calls" icon="phone" href="/phone/voice-calls">
+  Initiate outbound calls and review call transcripts and tool logs.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  How Commune protects webhook endpoints from SSRF and injection attacks.
+</Card>
+
+<Card title="Phone Numbers" icon="mobile" href="/phone/phone-numbers">
+  Configure the phone numbers your tools are attached to.
+</Card>
+
+</Columns>

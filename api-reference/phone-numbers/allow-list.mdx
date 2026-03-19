@@ -1,0 +1,123 @@
+---
+title: "Manage Allow List"
+api: "PUT /v1/phone-numbers/{id}/allow-list"
+description: "Set the allow list for a phone number. When non-empty, only numbers on this list can send inbound messages. Replaces the entire allow list on each call."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+// Get current allow list
+const pn = await commune.phoneNumbers.get('pn_01abc123');
+console.log(pn.allowList);
+
+// Add a number to the allow list
+const updated = await commune.phoneNumbers.addToAllowList('pn_01abc123', {
+  number: '+14155559999',
+});
+
+// Remove a number from the allow list
+await commune.phoneNumbers.removeFromAllowList('pn_01abc123', '+14155559999');
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+# Get current allow list
+pn = client.phone_numbers.get("pn_01abc123")
+print(pn.allow_list)
+
+# Add a number to the allow list
+updated = client.phone_numbers.add_to_allow_list("pn_01abc123", number="+14155559999")
+
+# Remove a number from the allow list
+client.phone_numbers.remove_from_allow_list("pn_01abc123", "+14155559999")
+```
+```bash MCP
+update_phone_number_allow_list(
+  id="pn_01abc123",
+  numbers=["+14155559999", "+14155558888"]
+)
+```
+```bash cURL
+curl -X PUT https://api.commune.email/v1/phone-numbers/pn_01abc123/allow-list \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "numbers": ["+14155559999", "+14155558888"]
+  }'
+```
+```bash CLI
+commune phone-numbers allow-list pn_01abc123
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "id": "pn_01abc123",
+    "number": "+18005550001",
+    "numberType": "tollfree",
+    "friendlyName": "Support Line",
+    "country": "US",
+    "capabilities": {
+      "sms": true,
+      "mms": true,
+      "voice": true
+    },
+    "status": "active",
+    "allowList": ["+14155559999", "+14155558888"],
+    "blockList": [],
+    "creditCostPerMonth": 150,
+    "autoReply": null,
+    "createdAt": "2026-02-01T00:00:00.000Z",
+    "updatedAt": "2026-02-25T10:00:00.000Z"
+  }
+}
+```
+```json 400 Invalid Numbers
+{
+  "error": "Invalid E.164 numbers",
+  "invalid": ["5551234"]
+}
+```
+```json 404 Not Found
+{
+  "error": "Phone number not found"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The phone number ID. Format: `pn_...`
+</ParamField>
+
+## Body
+
+<ParamField body="numbers" type="string[]" required>
+  The complete allow list as an array of E.164 phone numbers (e.g., `["+14155559999"]`). This **replaces** the entire current allow list. To clear the allow list and allow all numbers, pass an empty array `[]`.
+
+  All numbers must be valid E.164 format (e.g., `+14155559999`).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  The updated phone number record with the new `allowList`. See [Get Phone Number](/api-reference/phone-numbers/get) for the full response schema.
+</ResponseField>
+
+<Note>
+**Allow list behavior:**
+- An **empty** `allowList` (default) means all inbound numbers are accepted (subject to the block list).
+- A **non-empty** `allowList` means only numbers on the list are accepted.
+- If a number appears on **both** the allow list and block list, the **block list wins** and the message is rejected.
+
+Messages from blocked numbers are still stored with `delivery_status: "blocked"` for your audit trail.
+</Note>

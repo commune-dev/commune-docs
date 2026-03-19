@@ -1,0 +1,241 @@
+---
+title: TypeScript SDK
+description: Official Node.js / TypeScript SDK for Commune.
+---
+
+## Installation
+
+```bash
+npm install commune-ai
+```
+
+## Initialization
+
+```typescript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({
+  apiKey: process.env.COMMUNE_API_KEY,  // Required — starts with comm_
+  baseUrl: 'https://api.commune.email', // Optional — defaults to Commune cloud
+});
+```
+
+## Available methods
+
+The client is organized into namespaced resource groups:
+
+### `commune.messages`
+
+| Method | Description |
+|--------|-------------|
+| `send(payload)` | Send an email |
+| `list(params)` | List messages with filters |
+| `listByThread(threadId, params?)` | List messages in a thread |
+
+### `commune.inboxes`
+
+| Method | Description |
+|--------|-------------|
+| `list(domainId?)` | List inboxes (all or per domain) |
+| `create(payload)` | Create an inbox (domain auto-resolved or explicit) |
+| `update(domainId, inboxId, payload)` | Update an inbox |
+| `remove(domainId, inboxId)` | Delete an inbox |
+| `setWebhook(domainId, inboxId, payload)` | Configure webhook |
+| `setExtractionSchema(payload)` | Set structured extraction schema |
+| `removeExtractionSchema(payload)` | Remove extraction schema |
+
+### `commune.threads`
+
+| Method | Description |
+|--------|-------------|
+| `list(params)` | List threads with cursor pagination |
+| `messages(threadId, params?)` | Get all messages in a thread |
+| `metadata(threadId)` | Get thread triage metadata |
+| `setStatus(threadId, status)` | Set triage status |
+| `addTags(threadId, tags)` | Add tags to a thread |
+| `removeTags(threadId, tags)` | Remove tags from a thread |
+| `assign(threadId, assignedTo?)` | Assign/unassign a thread |
+
+### `commune.search`
+
+| Method | Description |
+|--------|-------------|
+| `threads({ query, inboxId?, domainId?, limit? })` | Semantic thread search |
+
+### `commune.delivery`
+
+| Method | Description |
+|--------|-------------|
+| `metrics({ inboxId?, domainId?, period? })` | Delivery metrics summary |
+| `events({ messageId?, inboxId?, domainId?, eventType?, limit? })` | Delivery event log |
+| `suppressions({ inboxId?, domainId?, limit? })` | Suppression list |
+
+### `commune.domains`
+
+| Method | Description |
+|--------|-------------|
+| `list()` | List all domains |
+| `create(payload)` | Create a custom domain |
+| `get(domainId)` | Get domain details |
+| `verify(domainId)` | Trigger DNS verification |
+| `records(domainId)` | Get required DNS records |
+
+### `commune.attachments`
+
+| Method | Description |
+|--------|-------------|
+| `upload(content, filename, mimeType)` | Upload a file (base64) |
+| `get(attachmentId, options?)` | Get attachment metadata or download URL |
+
+## TypeScript types
+
+All types are exported from the package:
+
+```typescript
+import type {
+  SendMessagePayload,
+  UnifiedMessage,
+  InboxEntry,
+  DomainEntry,
+  Thread,
+  ThreadListResponse,
+  AttachmentRecord,
+  AttachmentUploadResponse,
+  MessageMetadata,
+  Participant,
+  InboundEmailWebhookPayload,
+  WebhookSecurityContext,
+} from 'commune-ai';
+```
+
+## Error handling
+
+The SDK throws standard `Error` objects with the API error message:
+
+```typescript
+try {
+  await commune.messages.send({ to: 'invalid', subject: 'Test' });
+} catch (err) {
+  console.error(err.message); // "Missing required field: ..."
+}
+```
+
+## Custom fetch
+
+You can provide a custom `fetch` implementation (useful for testing or proxying):
+
+```typescript
+const commune = new CommuneClient({
+  apiKey: 'comm_...',
+  fetcher: customFetch,
+  headers: { 'X-Custom-Header': 'value' },
+});
+```
+
+## Full example
+
+```typescript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+async function main() {
+  // Create an inbox (simple - domain auto-assigned)
+  const inbox = await commune.inboxes.create({
+    localPart: 'support',
+  });
+  console.log(`Inbox created: ${inbox.address}`);
+
+  // List all inboxes
+  const inboxes = await commune.inboxes.list();
+
+  // Send an email
+  const result = await commune.messages.send({
+    to: 'user@example.com',
+    subject: 'Weekly report',
+    html: '<h1>Report</h1><p>All systems operational.</p>',
+    inboxId: inboxes[0].id,
+  });
+
+  // Browse threads
+  const { data: threads } = await commune.threads.list({
+    inbox_id: inboxes[0].id,
+    limit: 5,
+  });
+
+  for (const thread of threads) {
+    const messages = await commune.threads.messages(thread.thread_id);
+    console.log(`${thread.subject}: ${messages.length} messages`);
+  }
+
+  // Search + triage + delivery
+  const hits = await commune.search.threads({
+    query: 'customer asking for refund',
+    inboxId: inboxes[0].id,
+    limit: 10,
+  });
+  if (hits.length > 0) {
+    await commune.threads.setStatus(hits[0].thread_id, 'needs_reply');
+    await commune.threads.addTags(hits[0].thread_id, ['billing', 'urgent']);
+  }
+  const metrics = await commune.delivery.metrics({ inboxId: inboxes[0].id, period: '7d' });
+  console.log(metrics.sent, metrics.delivered);
+}
+
+main();
+```
+
+## Domain Auto-Resolution
+
+By default, Commune automatically assigns inboxes to an available domain. This is the recommended approach for getting started quickly.
+
+```typescript
+// Simple creation - domain auto-assigned (recommended)
+const inbox = await commune.inboxes.create({
+  localPart: 'support',
+});
+// Inbox is created on commune.email or your default domain
+```
+
+For production use with custom domains, specify the domain explicitly:
+
+```typescript
+// Explicit domain (for custom domains)
+const domains = await commune.domains.list();
+const inbox = await commune.inboxes.create({
+  localPart: 'support',
+  domainId: domains[0].id,
+});
+```
+
+Similarly, list all inboxes or filter by domain:
+
+```typescript
+// List all inboxes across all domains
+const allInboxes = await commune.inboxes.list();
+
+// Filter by specific domain
+const domainInboxes = await commune.inboxes.list('domain-id');
+```
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Python SDK" icon="python" href="/sdks/python">
+  Official Python SDK with sync and async clients.
+</Card>
+
+<Card title="MCP Server" icon="robot" href="/sdks/mcp">
+  Connect Claude Desktop, Cursor, and Windsurf to Commune.
+</Card>
+
+<Card title="REST API" icon="webhook" href="/sdks/rest-api">
+  Direct HTTP access from any language or environment.
+</Card>
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Build a complete email agent end-to-end in 5 minutes.
+</Card>
+
+</Columns>

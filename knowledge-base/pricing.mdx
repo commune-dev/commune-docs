@@ -1,0 +1,55 @@
+---
+title: How much does Commune cost?
+description: Commune has four plans: Free ($0), Agent Pro ($20/mo), Business ($150/mo), and Enterprise (custom). Plans differ by email volume, inboxes, and features.
+---
+
+## The short answer
+
+Free to start. $20/mo for agents running in production. $150/mo for teams running multiple agents at scale.
+
+No credit card required to create an account. You can send and receive email on the free plan immediately.
+
+## Plans
+
+| Plan | Price | Emails/day | Inboxes | Key features |
+|------|-------|------------|---------|--------------|
+| **Free** | $0 | 100 | 1 | Basic send/receive, shared domain |
+| **Agent Pro** | $20/mo | 10,000 | 10 | Custom domain, warmup, structured extraction, webhooks |
+| **Business** | $150/mo | 100,000 | Unlimited | All features + network graph, semantic search, SSO, audit logs, priority support |
+| **Enterprise** | Custom | Custom | Custom | Custom contracts, SLA, on-prem options |
+
+## What's included on every plan
+
+Regardless of plan, every Commune account includes:
+
+- **Ed25519 agent authentication** — challenge-response identity for agents, not shared secrets
+- **DKIM / SPF / DMARC** — full email authentication stack configured automatically
+- **Spam protection** — inbound spam filtering and sender reputation scoring
+- **Prompt injection detection** — inbound emails scanned for embedded prompt injection attempts
+- **REST API + SDKs** — Node.js, Python, and MCP integrations
+
+## How to upgrade
+
+Go to [commune.email/dashboard/billing](https://commune.email/dashboard/billing) to upgrade at any time. Changes take effect immediately.
+
+For Enterprise — custom volume, SLA, or on-prem requirements — contact sales directly. Reach out at [commune.email/dashboard/billing](https://commune.email/dashboard/billing) and select "Contact sales."
+
+No credit card is required to start on the free plan.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Introduction" icon="rocket" href="/introduction">
+  Get started with Commune — overview of the platform and how agent email works.
+</Card>
+
+<Card title="Authentication" icon="key" href="/authentication">
+  Set up API key or Ed25519 agent authentication to start making API calls.
+</Card>
+
+<Card title="Billing Dashboard" icon="book" href="https://commune.email/dashboard/billing">
+  Upgrade your plan or contact sales directly from the billing dashboard.
+</Card>
+
+</Columns>

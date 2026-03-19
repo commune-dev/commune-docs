@@ -1,0 +1,338 @@
+---
+title: Quickstart
+description: Send your first email from an AI agent in under 5 minutes. Create an inbox, send, receive, reply.
+---
+
+Give your agent an email address, send its first email, and handle replies. Takes about 5 minutes.
+
+<Steps>
+
+<Step title="Install the SDK">
+
+<CodeGroup>
+
+```bash TypeScript
+npm install commune-ai
+```
+
+```bash Python
+pip install commune-mail
+```
+
+```bash MCP (Claude/Cursor/Windsurf)
+# Add to your MCP config:
+# command: "uvx", args: ["commune-mcp"]
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Initialize the client">
+
+Get your API key from the [dashboard](https://commune.email/dashboard/api-keys).
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({
+  apiKey: process.env.COMMUNE_API_KEY,
+});
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient(api_key="comm_...")
+# Or set COMMUNE_API_KEY env var and omit api_key
+```
+
+```json MCP config
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_..."
+      }
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Create an inbox">
+
+Your agent needs an email address. Commune auto-assigns a domain if you don't specify one.
+
+<CodeGroup>
+
+```typescript TypeScript
+const inbox = await commune.inboxes.create({
+  localPart: 'support',
+});
+
+console.log(inbox.address);
+// → support@yourdomain.com
+```
+
+```python Python
+inbox = client.inboxes.create(local_part="support")
+print(inbox.address)
+# → support@yourdomain.com
+```
+
+```bash MCP
+create_inbox(local_part="support")
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "local_part": "support",
+    "name": "Support Agent"
+  }'
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Send an email">
+
+<CodeGroup>
+
+```typescript TypeScript
+const result = await commune.messages.send({
+  to: 'customer@example.com',
+  subject: 'Your order is confirmed',
+  html: '<p>Hi! Your order #12345 has been confirmed.</p>',
+  text: 'Hi! Your order #12345 has been confirmed.',
+});
+
+console.log(result.thread_id);  // thread_abc123
+```
+
+```python Python
+result = client.messages.send(
+    to="customer@example.com",
+    subject="Your order is confirmed",
+    html="<p>Hi! Your order #12345 has been confirmed.</p>",
+    text="Hi! Your order #12345 has been confirmed.",
+)
+
+print(result.thread_id)  # thread_abc123
+```
+
+```bash MCP
+send_email(
+  to="customer@example.com",
+  subject="Your order is confirmed",
+  body="Hi! Your order #12345 has been confirmed."
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/messages/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "customer@example.com",
+    "subject": "Your order is confirmed",
+    "html": "<p>Hi! Your order #12345 has been confirmed.</p>"
+  }'
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Receive emails via webhook">
+
+Configure a webhook on your inbox so your agent is notified in real time when someone replies.
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.setWebhook(inbox.domainId, inbox.id, {
+  endpoint: 'https://your-server.com/webhooks/email',
+  events: ['inbound'],
+});
+```
+
+```python Python
+client.inboxes.set_webhook(
+    domain_id=inbox.domain_id,
+    inbox_id=inbox.id,
+    endpoint="https://your-server.com/webhooks/email",
+    events=["inbound"],
+)
+```
+
+```bash cURL
+curl -X PUT https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "endpoint": "https://your-server.com/webhooks/email",
+      "events": ["inbound"]
+    }
+  }'
+```
+
+</CodeGroup>
+
+When someone replies, Commune POSTs to your webhook:
+
+```json
+{
+  "domainId": "d_abc123",
+  "inboxAddress": "support@yourdomain.com",
+  "message": {
+    "message_id": "msg_001",
+    "thread_id": "thread_abc",
+    "direction": "inbound",
+    "content": "Hi, I need help with my order #12345",
+    "participants": [
+      { "role": "sender", "identity": "customer@example.com" }
+    ],
+    "metadata": { "subject": "Re: Your order is confirmed" }
+  },
+  "security": {
+    "spam": { "score": 1.2, "flagged": false },
+    "prompt_injection": { "detected": false, "risk_level": "none" }
+  }
+}
+```
+
+</Step>
+
+<Step title="Build a responding agent">
+
+A full inbound handler that reads the email, generates a reply with Claude, and sends it back in the same thread:
+
+<CodeGroup>
+
+```typescript TypeScript
+import express from 'express';
+import { CommuneClient } from 'commune-ai';
+import Anthropic from '@anthropic-ai/sdk';
+
+const app = express();
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+const anthropic = new Anthropic();
+
+app.post('/webhooks/email', express.json(), async (req, res) => {
+  const { message } = req.body;
+  if (message.direction !== 'inbound') return res.json({ ok: true });
+
+  // Generate reply
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    system: 'You are a helpful customer support agent. Reply concisely and helpfully.',
+    messages: [{ role: 'user', content: message.content }],
+  });
+
+  const replyHtml = response.content[0].type === 'text'
+    ? `<p>${response.content[0].text}</p>`
+    : '';
+
+  const sender = message.participants.find(p => p.role === 'sender')?.identity;
+
+  // Reply in the same thread
+  await commune.messages.send({
+    to: sender,
+    subject: `Re: ${message.metadata.subject}`,
+    html: replyHtml,
+    thread_id: message.thread_id,
+  });
+
+  res.json({ ok: true });
+});
+
+app.listen(3000);
+```
+
+```python Python
+from flask import Flask, request, jsonify
+from commune import CommuneClient
+import anthropic
+
+app = Flask(__name__)
+commune = CommuneClient()
+claude = anthropic.Anthropic()
+
+@app.route("/webhooks/email", methods=["POST"])
+def handle_email():
+    data = request.json
+    message = data["message"]
+    if message["direction"] != "inbound":
+        return jsonify(ok=True)
+
+    # Generate reply
+    response = claude.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        system="You are a helpful customer support agent. Reply concisely and helpfully.",
+        messages=[{"role": "user", "content": message["content"]}],
+    )
+
+    reply_text = response.content[0].text
+    sender = next(p["identity"] for p in message["participants"] if p["role"] == "sender")
+
+    # Reply in the same thread
+    commune.messages.send(
+        to=sender,
+        subject=f"Re: {message['metadata']['subject']}",
+        html=f"<p>{reply_text}</p>",
+        thread_id=message["thread_id"],
+    )
+
+    return jsonify(ok=True)
+```
+
+</CodeGroup>
+
+</Step>
+
+</Steps>
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Full reference for sending, listing, and threading emails.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Webhook events, retries, signatures, and delivery tracking.
+</Card>
+
+<Card title="Attachments" icon="paperclip" href="/features/attachments">
+  Upload and send files. Extract content from inbound attachments.
+</Card>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-data-extraction">
+  Auto-extract structured fields from every inbound email using LLM.
+</Card>
+
+<Card title="Security" icon="shield" href="/security/overview">
+  DKIM, encryption, spam prevention, prompt injection detection.
+</Card>
+
+<Card title="Phone & SMS" icon="phone" href="/phone/quickstart">
+  Add SMS alongside email for multi-channel agent communication.
+</Card>
+
+</Columns>

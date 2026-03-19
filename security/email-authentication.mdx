@@ -1,0 +1,145 @@
+---
+title: Email Authentication
+description: Automatic DKIM signing, SPF, and DMARC configuration for every outbound email.
+---
+
+Every outbound email is DKIM-signed. SPF and DMARC records are configured automatically when you add a custom domain. On the shared domain, all three are pre-configured.
+
+## DKIM (DomainKeys Identified Mail)
+
+DKIM adds a cryptographic signature to every outbound email, proving it was sent by an authorized server and wasn't modified in transit.
+
+**How it works:**
+1. Commune generates a public/private key pair for your domain
+2. The public key is published as a DNS CNAME record
+3. Every outbound email is signed with the private key
+4. The recipient's mail server verifies the signature against the public key
+
+**What you do:** Add the DKIM CNAME record returned by the [domains API](/features/domains#get-dns-records) to your DNS.
+
+```
+Type:  CNAME
+Name:  commune._domainkey.yourdomain.com
+Value: dkim.commune.email
+```
+
+**On shared domain:** DKIM is already configured — no action needed.
+
+## SPF (Sender Policy Framework)
+
+SPF tells receiving mail servers which IP addresses are authorized to send email for your domain.
+
+**How it works:**
+1. You publish a TXT record listing authorized senders
+2. When your email arrives, the recipient server checks if the sending IP is in your SPF record
+3. Emails from unauthorized IPs fail SPF and may be rejected
+
+**What you do:** Add the SPF TXT record to your DNS:
+
+```
+Type:  TXT
+Name:  yourdomain.com
+Value: v=spf1 include:amazonses.com ~all
+```
+
+The `include:amazonses.com` authorizes Commune's email delivery infrastructure to send on your behalf. The `~all` soft-fails all other senders.
+
+**On shared domain:** SPF is already configured.
+
+## DMARC (Domain-based Message Authentication, Reporting & Conformance)
+
+DMARC ties DKIM and SPF together with a policy that tells receiving servers what to do when authentication fails.
+
+**How it works:**
+1. You publish a DMARC TXT record with your policy
+2. Receiving servers check both DKIM and SPF
+3. If both fail, the DMARC policy determines the action (none, quarantine, reject)
+4. Aggregate reports are sent to your reporting address
+
+**Recommended DNS record:**
+
+```
+Type:  TXT
+Name:  _dmarc.yourdomain.com
+Value: v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com
+```
+
+Start with `p=none` (monitor only), then move to `p=quarantine` or `p=reject` once you've verified all legitimate emails pass.
+
+**DMARC reporting:** Commune can ingest and analyze DMARC aggregate reports:
+
+```bash
+# Submit a DMARC report
+curl -X POST "https://api.commune.email/v1/dmarc/reports?domain_id=d_abc" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/xml" \
+  --data-binary @dmarc-report.xml
+
+# Get DMARC summary
+curl "https://api.commune.email/v1/dmarc/summary?domain=yourdomain.com&days=30" \
+  -H "Authorization: Bearer comm_..."
+```
+
+## Verification status
+
+After adding DNS records, verify your domain:
+
+```bash
+curl -X POST "https://api.commune.email/v1/domains/DOMAIN_ID/verify" \
+  -H "Authorization: Bearer comm_..."
+```
+
+Commune checks all three records (DKIM, SPF, DMARC) during verification. The domain status becomes `verified` when all required records are confirmed.
+
+## Authentication flow diagram
+
+```
+Your agent sends email
+        ↓
+Commune signs with DKIM private key
+        ↓
+Email sent from authorized IP (SPF passes)
+        ↓
+Recipient server receives email
+        ↓
+├── Check SPF: Is sending IP authorized? ✓
+├── Check DKIM: Is signature valid? ✓
+└── Check DMARC: Do SPF/DKIM align with From domain? ✓
+        ↓
+Email delivered to inbox ✓
+```
+
+## Impact on deliverability
+
+| Authentication | Missing impact |
+|---------------|----------------|
+| DKIM | Emails may land in spam; some providers reject unsigned emails |
+| SPF | Emails may be marked as suspicious or rejected |
+| DMARC | No policy enforcement; spoofing protection is weaker |
+| All three | Maximum deliverability and sender reputation |
+
+<Note>
+  Custom domains require all three records for verification. The shared domain (`agents.commune.email`) has all authentication pre-configured.
+</Note>
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Domains" icon="globe" href="/features/domains">
+  Add a custom domain and retrieve the DNS records to configure.
+</Card>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Monitor bounce rates and sender reputation after configuring auth.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-halved" href="/security/spam-prevention">
+  Complement authentication with inbound spam scoring and content validation.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full picture of Commune's security architecture.
+</Card>
+
+</Columns>

@@ -1,0 +1,97 @@
+---
+title: "Introduction"
+description: "The Commune API is a REST API for giving AI agents email addresses, phone numbers, and multi-channel communication capabilities."
+---
+
+The Commune API lets your agent send and receive email and SMS, manage inboxes and phone numbers, and handle multi-turn conversations with real users — all over standard HTTP.
+
+## Base URL
+
+```
+https://api.commune.email/v1
+```
+
+All endpoints are served over HTTPS. HTTP requests are rejected.
+
+## SDKs
+
+<Columns cols={2}>
+
+<Card title="TypeScript" icon="js" href="/SDKs/typescript">
+  `npm install commune-ai` — the official Node.js/TypeScript SDK.
+</Card>
+
+<Card title="Python" icon="python" href="/SDKs/python">
+  `pip install commune-mail` — the official Python SDK with CLI included.
+</Card>
+
+<Card title="MCP Server" icon="robot" href="/SDKs/mcp-server">
+  `uvx commune-mcp` — use Commune directly in Claude, Cursor, and Windsurf.
+</Card>
+
+<Card title="REST API" icon="code" href="/SDKs/rest-api">
+  Language-agnostic. Any HTTP client works. Authenticated with a Bearer token.
+</Card>
+
+</Columns>
+
+## Quick reference
+
+<Columns cols={2}>
+
+<Card title="Send an email" icon="paper-plane" href="/api-reference/messages/send">
+  `POST /v1/messages/send`
+</Card>
+
+<Card title="Create an inbox" icon="inbox" href="/api-reference/inboxes/create">
+  `POST /v1/inboxes`
+</Card>
+
+<Card title="Send an SMS" icon="message" href="/api-reference/sms/send">
+  `POST /v1/sms/send`
+</Card>
+
+<Card title="Buy a phone number" icon="phone" href="/api-reference/phone-numbers/purchase">
+  `POST /v1/phone-numbers/purchase`
+</Card>
+
+<Card title="List messages" icon="list" href="/api-reference/messages/list">
+  `GET /v1/messages`
+</Card>
+
+<Card title="Get credit balance" icon="coins" href="/api-reference/credits/get">
+  `GET /v1/credits`
+</Card>
+
+</Columns>
+
+## Authentication
+
+All requests require an API key passed as a Bearer token:
+
+```bash
+Authorization: Bearer comm_your_api_key_here
+```
+
+[Get your API key →](/api-reference/authentication)
+
+## Response format
+
+All successful responses return a `data` field:
+
+```json
+{
+  "data": { ... }
+}
+```
+
+All errors return an `error` code and `message`:
+
+```json
+{
+  "error": "validation_error",
+  "message": "Human-readable description"
+}
+```
+
+[Full error reference →](/api-reference/errors)

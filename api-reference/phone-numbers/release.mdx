@@ -1,0 +1,92 @@
+---
+title: "Release Phone Number"
+api: "DELETE /v1/phone-numbers/{id}"
+description: "Release a phone number from your account. The number is immediately deprovisioned from Twilio and can no longer send or receive messages."
+---
+
+<Warning>
+Released numbers cannot be reclaimed for 30 days. This action cannot be undone. After release, you also cannot purchase a new phone number for 30 days.
+</Warning>
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const result = await commune.phoneNumbers.release('pn_01abc123');
+
+console.log(result.status);  // released
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.phone_numbers.release("pn_01abc123")
+
+print(result.status)  # released
+```
+```bash MCP
+release_phone_number(id="pn_01abc123")
+```
+```bash cURL
+curl -X DELETE https://api.commune.email/v1/phone-numbers/pn_01abc123 \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune phone-numbers release pn_01abc123
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "id": "pn_01abc123",
+    "status": "released",
+    "message": "Phone number released. No credit refund. History retained."
+  }
+}
+```
+```json 404 Not Found
+{
+  "error": "Phone number not found"
+}
+```
+```json 409 Already Released
+{
+  "error": "Phone number already released"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The phone number ID to release. Format: `pn_...`
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      The ID of the released phone number.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Always `released`.
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Confirmation message.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+**What happens on release:**
+- The number is immediately removed from the Twilio Messaging Service and released from your Twilio subaccount.
+- The phone number record in Commune is marked `released` — message history is retained.
+- **No credit refund** is issued for unused days in the billing cycle.
+- A **30-day cooldown** is applied — you cannot purchase a new phone number until 30 days after the release date.
+</Note>

@@ -1,0 +1,188 @@
+---
+title: What happens if my agent sends too many emails?
+description: Commune enforces per-plan rate limits. Agents that hit limits receive 429 responses and should implement exponential backoff.
+---
+
+## The short answer
+
+Your agent receives a `429 Too Many Requests` response. The response includes a `Retry-After` header that tells you exactly how many seconds to wait before retrying. Implement exponential backoff — retry after the indicated delay, and double the wait on each subsequent failure.
+
+Do not retry immediately. Hammering the API after a 429 makes the situation worse and can trigger longer cooldowns.
+
+## Rate limits by plan
+
+| Plan | Emails / day | Emails / minute |
+|------|-------------|-----------------|
+| Free | 100 | 10 |
+| Agent Pro | 10,000 | 100 |
+| Business | 100,000 | 1,000 |
+| Enterprise | Custom | Custom |
+
+Per-minute limits reset on a rolling window. Per-day limits reset at midnight UTC.
+
+## What a 429 response looks like
+
+```json
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+
+{
+  "error": "rate_limit_exceeded",
+  "retryAfter": 60
+}
+```
+
+`retryAfter` is in seconds. Read it from the JSON body or the `Retry-After` header — both are present.
+
+## How to handle 429 in code
+
+<CodeGroup>
+
+```typescript TypeScript
+async function sendWithBackoff(
+  payload: SendEmailPayload,
+  maxRetries = 5,
+): Promise<void> {
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      await commune.messages.send(payload);
+      return;
+    } catch (err: any) {
+      if (err.status === 429) {
+        const retryAfter = err.body?.retryAfter ?? 60;
+        const backoff = retryAfter * Math.pow(2, attempt);
+        console.log(`Rate limited. Retrying in ${backoff}s (attempt ${attempt + 1})`);
+        await sleep(backoff * 1000);
+        attempt++;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  throw new Error(`Failed to send email after ${maxRetries} attempts`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+```
+
+```python Python
+import time
+import math
+
+def send_with_backoff(payload: dict, max_retries: int = 5) -> None:
+    attempt = 0
+
+    while attempt < max_retries:
+        try:
+            client.messages.send(**payload)
+            return
+        except CommuneRateLimitError as err:
+            retry_after = getattr(err, "retry_after", 60)
+            backoff = retry_after * math.pow(2, attempt)
+            print(f"Rate limited. Retrying in {backoff}s (attempt {attempt + 1})")
+            time.sleep(backoff)
+            attempt += 1
+
+    raise RuntimeError(f"Failed to send email after {max_retries} attempts")
+```
+
+</CodeGroup>
+
+**Key points:**
+
+- Start with the `retryAfter` value from the response, not an arbitrary constant
+- Multiply by `2^attempt` on each retry — exponential, not linear
+- Cap the maximum wait to something reasonable (e.g. 10 minutes) for long-running queues
+- Log every 429 — a spike in rate limit errors signals a sending strategy problem, not just a transient issue
+
+## Protecting your deliverability
+
+Rate limits exist for two reasons: protecting the API and protecting your sender reputation. The second one matters more.
+
+Blasting thousands of emails in a short window triggers spam filters at the receiving end — regardless of what your plan allows. Gmail, Outlook, and corporate mail servers track sending velocity per IP and domain. A sudden spike looks like a compromised account or a spam campaign.
+
+The plan limit is a ceiling, not a target. Stay well below it, especially on new domains.
+
+**Warmup ramp matters more than plan limit.** A new domain sending 1,000 emails on day one will land in spam even if the Business plan technically allows it. The domain needs a reputation first. See [How to warm up a domain](/kb/how-to-warm-up-domain) for the full ramp schedule.
+
+## Batching large sends
+
+If your agent needs to send a large volume — campaign emails, digest notifications, bulk outreach — spread the sends over hours or days rather than issuing them all at once.
+
+<CodeGroup>
+
+```typescript TypeScript
+const recipients = [...]; // your full list
+
+const BATCH_SIZE = 50;
+const DELAY_MS = 2000; // 2 seconds between batches
+
+for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+  const batch = recipients.slice(i, i + BATCH_SIZE);
+
+  await Promise.all(
+    batch.map((recipient) =>
+      sendWithBackoff({
+        from: 'agent@yourdomain.com',
+        to: recipient.email,
+        subject: 'Your weekly digest',
+        html: renderDigest(recipient),
+      }),
+    ),
+  );
+
+  if (i + BATCH_SIZE < recipients.length) {
+    await sleep(DELAY_MS);
+  }
+}
+```
+
+```python Python
+import time
+
+recipients = [...]  # your full list
+
+BATCH_SIZE = 50
+DELAY_SECONDS = 2
+
+for i in range(0, len(recipients), BATCH_SIZE):
+    batch = recipients[i : i + BATCH_SIZE]
+
+    for recipient in batch:
+        send_with_backoff({
+            "from_": "agent@yourdomain.com",
+            "to": recipient["email"],
+            "subject": "Your weekly digest",
+            "html": render_digest(recipient),
+        })
+
+    if i + BATCH_SIZE < len(recipients):
+        time.sleep(DELAY_SECONDS)
+```
+
+</CodeGroup>
+
+For very large lists (10,000+), push sends into a job queue (e.g. BullMQ, Celery) with concurrency limits rather than running them in a single process loop. This gives you retry durability, observability, and natural rate control.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Full reference for all per-plan rate limit tiers and how limits are enforced.
+</Card>
+
+<Card title="Sending Messages" icon="paper-plane" href="/features/messages">
+  Complete API reference for commune.messages.send() and message delivery options.
+</Card>
+
+<Card title="How to Warm Up a Domain" icon="book-open" href="/kb/how-to-warm-up-domain">
+  Ramp schedule and warmup strategy for new sending domains.
+</Card>
+
+</Columns>

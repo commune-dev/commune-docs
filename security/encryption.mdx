@@ -1,0 +1,93 @@
+---
+title: Encryption
+description: AES-256-GCM encryption for stored email content, webhook payloads, and secrets.
+---
+
+All email bodies, subjects, webhook payloads, and secrets are encrypted at rest with AES-256-GCM. Each field gets a unique IV, and every value includes an integrity tag to detect tampering.
+
+## What's encrypted
+
+| Data | Encrypted | Details |
+|------|-----------|---------|
+| Email body (text + HTML) | ✓ | Encrypted on insert, decrypted on read |
+| Email subject | ✓ | Encrypted on insert, decrypted on read |
+| Webhook payloads | ✓ | Encrypted when stored for retry/audit |
+| Webhook secrets | ✓ | Domain and inbox webhook secrets |
+| Attachment content | ✓ | Base64 content in database storage |
+| API keys | Hashed | Stored as irreversible hashes, not encrypted |
+
+## How it works
+
+```
+Write path:  plaintext → AES-256-GCM encrypt → store "enc:{iv}:{ciphertext}:{tag}"
+Read path:   "enc:{iv}:{ciphertext}:{tag}" → AES-256-GCM decrypt → plaintext
+```
+
+Each encrypted value includes:
+- **IV (Initialization Vector)** — unique random nonce per encryption
+- **Ciphertext** — encrypted data
+- **Auth tag** — integrity verification (detects tampering)
+
+The format `enc:{iv}:{ciphertext}:{tag}` allows the system to detect encrypted vs. plaintext values automatically.
+
+## Key management
+
+Commune uses a three-layer key protection system:
+
+### 1. Key fingerprint lock
+A SHA-256 fingerprint of the encryption key is stored in MongoDB. On every server startup, the current key's fingerprint is compared against the stored lock. If they don't match (indicating an unauthorized key change), the server refuses to start.
+
+### 2. Decryption canary
+A test value encrypted with the current key is stored and verified on startup. If the canary can't be decrypted, the key is wrong and the server halts.
+
+### 3. Dual-key rotation
+When rotating encryption keys, the system supports reading with both the current and previous key simultaneously. This enables zero-downtime key rotation:
+
+1. Set the previous key as a fallback
+2. Deploy with the new key
+3. Run a re-encryption migration
+4. Remove the previous key
+
+## Encryption scope
+
+Encryption is **optional and configurable** via environment variables. When no encryption key is set:
+- Data is stored in plaintext
+- All features work identically
+- No performance overhead
+
+When encryption is enabled:
+- All reads and writes go through the encryption layer
+- Minimal latency impact (< 1ms per field)
+- Database queries on encrypted fields are not possible (search uses separate indexes)
+
+## Security considerations
+
+<Warning>
+  Key loss equals data loss. If the encryption key is lost without a backup, encrypted data is permanently irrecoverable. Store your encryption key in a secrets manager with redundant backups.
+</Warning>
+
+- **No key in logs** — the encryption key is never logged; only the fingerprint appears in startup logs
+- **Per-field encryption** — each field is encrypted independently with a unique IV
+- **Double-encryption guard** — the system detects already-encrypted values and skips re-encryption
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full picture of all inbound and outbound security layers.
+</Card>
+
+<Card title="Data Deletion" icon="trash" href="/features/data-deletion">
+  GDPR-compliant deletion API with audit trail.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-halved" href="/security/spam-prevention">
+  Inbound and outbound email protection systems.
+</Card>
+
+<Card title="Email Authentication" icon="fingerprint" href="/security/email-authentication">
+  DKIM, SPF, and DMARC configuration for your domain.
+</Card>
+
+</Columns>

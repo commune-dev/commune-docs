@@ -1,0 +1,122 @@
+---
+title: "Purchase Credits"
+api: "POST /v1/credits/checkout"
+description: "Create a Stripe Checkout session to purchase a credit bundle. Returns a checkout URL — redirect your user to complete the payment."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const checkout = await commune.credits.purchase({
+  bundleId: 'growth',
+  success_url: 'https://your-app.com/billing?credits=success',
+  cancel_url: 'https://your-app.com/billing',
+});
+
+// Redirect your user to this URL
+console.log(checkout.checkout_url);
+console.log(`Purchasing ${checkout.credits} credits for $${checkout.price}`);
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+checkout = client.credits.purchase(
+    bundle_id="growth",
+    success_url="https://your-app.com/billing?credits=success",
+    cancel_url="https://your-app.com/billing",
+)
+
+# Redirect your user to this URL
+print(checkout.checkout_url)
+print(f"Purchasing {checkout.credits} credits for ${checkout.price}")
+```
+```bash MCP
+purchase_credits(bundle_id="growth")
+```
+```bash cURL
+curl -X POST https://api.commune.email/v1/credits/checkout \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bundle": "growth",
+    "success_url": "https://your-app.com/billing?credits=success",
+    "cancel_url": "https://your-app.com/billing"
+  }'
+```
+```bash CLI
+commune credits purchase --bundle-id growth
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "checkout_url": "https://checkout.stripe.com/pay/cs_live_abc123...",
+    "bundle": "growth",
+    "credits": 5000,
+    "price": 55
+  }
+}
+```
+```json 400 Bad Request
+{
+  "error": "Invalid request",
+  "details": {
+    "fieldErrors": {
+      "bundle": ["Invalid enum value. Expected 'starter' | 'growth' | 'scale'"]
+    }
+  }
+}
+```
+```json 503 Not Configured
+{
+  "error": "credit_bundles_not_configured",
+  "message": "Credit purchase is not yet configured. Contact support."
+}
+```
+</ResponseExample>
+
+## Body
+
+<ParamField body="bundle" type="string" required>
+  The bundle ID to purchase. One of: `starter`, `growth`, `scale`. Get bundle details and pricing from `GET /v1/credits/bundles`.
+</ParamField>
+
+<ParamField body="success_url" type="string">
+  URL to redirect the user to after a successful payment. Defaults to your Commune dashboard billing page.
+</ParamField>
+
+<ParamField body="cancel_url" type="string">
+  URL to redirect the user to if they cancel the checkout. Defaults to your Commune dashboard billing page.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="checkout_url" type="string">
+      Stripe-hosted checkout URL. Redirect your user to this URL to complete the purchase. The session expires after 24 hours.
+    </ResponseField>
+    <ResponseField name="bundle" type="string">
+      The bundle ID being purchased.
+    </ResponseField>
+    <ResponseField name="credits" type="number">
+      Number of credits that will be added to your balance.
+    </ResponseField>
+    <ResponseField name="price" type="number">
+      Price in USD for this purchase.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+Credits are added to your account automatically via Stripe webhook after payment is confirmed. There is typically a 1–3 second delay between payment completion and credits appearing in your balance.
+
+Purchased credits roll over indefinitely and do not expire. They are drawn from after your included plan credits are exhausted.
+</Note>

@@ -1,0 +1,218 @@
+---
+title: Openclaw
+description: Give your Openclaw agent an email inbox using Commune skills and webhooks.
+---
+
+## What is Openclaw?
+
+[Openclaw](https://github.com/openclaw/openclaw) is an open-source AI agent framework that runs on your machine 24/7. It connects to messaging platforms (WhatsApp, Telegram, Slack, Discord) and executes tasks autonomously using **Tools** and **Skills**.
+
+By giving your Openclaw agent a Commune email inbox, it can send outbound emails, receive inbound emails via webhook, and manage threaded conversations — all programmatically.
+
+## How it works
+
+```
+Openclaw agent
+  │
+  ├─ SKILL.md teaches the agent Commune API calls
+  │
+  ▼
+Commune API
+  │
+  ├─ Outbound: agent sends emails via REST API
+  ├─ Inbound: Commune forwards emails to Openclaw webhook
+  │
+  ▼
+Email sent / received
+```
+
+1. Create a Commune inbox for your agent via API
+2. Set up a webhook endpoint so Openclaw receives inbound emails
+3. Create a `SKILL.md` that teaches Openclaw how to use the Commune API
+4. Your agent can now send, receive, and reply to emails autonomously
+
+## Setup guide
+
+<Steps>
+
+<Step title="Create an inbox">
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "local_part": "my-openclaw-agent",
+    "display_name": "My Openclaw Agent"
+  }'
+```
+
+```typescript TypeScript
+const inbox = await commune.inboxes.create({
+  localPart: 'my-openclaw-agent',
+  displayName: 'My Openclaw Agent',
+});
+```
+
+```python Python
+inbox = client.inboxes.create(
+    local_part="my-openclaw-agent",
+    display_name="My Openclaw Agent",
+)
+```
+
+</CodeGroup>
+
+This gives your agent an address like `my-openclaw-agent@agents.commune.email`.
+
+</Step>
+
+<Step title="Configure a webhook for inbound emails">
+
+Set up a webhook on your inbox so Commune forwards inbound emails to your Openclaw instance.
+
+```bash
+curl -X POST https://api.commune.email/v1/domains/YOUR_DOMAIN_ID/inboxes/YOUR_INBOX_ID/webhook \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "endpoint": "https://your-openclaw-host:8080/webhook/email",
+    "events": ["inbound"]
+  }'
+```
+
+<Tip>
+  If running Openclaw locally, use a tunnel like `ngrok` or `cloudflared` to expose your webhook endpoint.
+</Tip>
+
+</Step>
+
+<Step title="Add the Openclaw webhook hook">
+
+In your `openclaw.json`, add a hook that listens for the email webhook topic:
+
+```json
+// ~/.openclaw/openclaw.json
+{
+  "hooks": {
+    "email": {
+      "type": "webhook",
+      "topic": "email",
+      "description": "Inbound emails from Commune",
+      "handler": "process-email"
+    }
+  }
+}
+```
+
+</Step>
+
+<Step title="Create the Commune email SKILL.md">
+
+Skills are markdown playbooks that teach Openclaw how to perform tasks. Create this file in your Openclaw workspace:
+
+```markdown
+# ~/.openclaw/skills/commune-ai/SKILL.md
+
+# Commune Email Skill
+
+## Description
+Send and receive emails using the Commune API.
+
+## Configuration
+- COMMUNE_API_KEY: Your Commune API key
+- COMMUNE_INBOX_ID: Your inbox ID
+- COMMUNE_API_BASE: https://api.commune.email
+
+## Send Email
+When asked to send an email:
+1. Use web_fetch to POST to ${COMMUNE_API_BASE}/v1/messages/send
+2. Include headers: Authorization: Bearer ${COMMUNE_API_KEY}
+3. Body: { "inbox_id": "${COMMUNE_INBOX_ID}", "to": [recipient],
+   "subject": subject, "text": body, "html": html_body }
+4. Confirm send with the message_id from response
+
+## Read Emails
+When asked to check or read emails:
+1. GET ${COMMUNE_API_BASE}/v1/inboxes/${COMMUNE_INBOX_ID}/threads
+2. Parse thread list and summarize for user
+3. To read a thread: GET /v1/threads/{thread_id}/messages
+
+## Reply to Email
+When replying to an email thread:
+1. POST to ${COMMUNE_API_BASE}/v1/messages/send
+2. Include "thread_id" in the body to keep the conversation threaded
+3. The Reply-To header is handled automatically
+
+## Handle Inbound Webhook
+When an email webhook arrives at /webhook/email:
+1. Parse the payload for: from, subject, text, thread_id
+2. Summarize the email and determine if action is needed
+3. If auto-reply is configured, draft and send a response
+4. Otherwise, notify the user via their preferred channel
+```
+
+</Step>
+
+<Step title="Set environment variables">
+
+```json
+// ~/.openclaw/openclaw.json — environment section
+{
+  "environment": {
+    "COMMUNE_API_KEY": "comm_your_api_key_here",
+    "COMMUNE_INBOX_ID": "your_inbox_id",
+    "COMMUNE_API_BASE": "https://api.commune.email"
+  }
+}
+```
+
+</Step>
+
+<Step title="Test the integration">
+
+Send a test message to your Openclaw agent via any channel (WhatsApp, Telegram, etc.):
+
+```
+You: "Send an email to hello@example.com with subject 'Test' and body 'Hello from Openclaw!'"
+
+Openclaw: "Email sent successfully to hello@example.com (message_id: msg_xxx).
+The email was sent from my-openclaw-agent@agents.commune.email."
+```
+
+</Step>
+
+</Steps>
+
+## Advanced: Auto-reply to inbound emails
+
+You can configure your Openclaw agent to automatically process and reply to inbound emails. Add this to your SKILL.md:
+
+```markdown
+## Auto-Reply Rules
+When an inbound email arrives via webhook:
+1. Check if the sender is in the known contacts list
+2. Analyze the email content for intent (question, request, etc.)
+3. Draft an appropriate response using context from previous threads
+4. Send the reply using the Commune API with the same thread_id
+5. Log the interaction for review
+```
+
+## Resources
+
+<Columns cols={2}>
+  <Card title="Openclaw GitHub" icon="github" href="https://github.com/openclaw/openclaw">
+    Openclaw source code and documentation
+  </Card>
+  <Card title="Openclaw Hooks" icon="webhook" href="https://openclawlab.com/docs/hooks/">
+    Webhook hook configuration docs
+  </Card>
+  <Card title="Messages API" icon="paper-plane" href="/features/messages">
+    Full Commune messages documentation
+  </Card>
+  <Card title="Webhooks" icon="bell" href="/features/webhooks">
+    Webhook setup and payload format
+  </Card>
+</Columns>

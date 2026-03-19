@@ -1,0 +1,133 @@
+---
+title: How does Commune resolve email threads?
+description: Commune uses routing tokens embedded in Reply-To addresses as the primary thread identifier, with RFC 5322 headers as fallback.
+---
+
+## The short answer
+
+Commune uses RFC 5322 `In-Reply-To` and `References` headers with real SMTP Message-IDs for standards-compliant threading across Gmail, Outlook, Apple Mail, and Thunderbird. Every outbound email also includes a routing token in the `Reply-To` address as a secondary resolution mechanism. When a reply arrives, Commune resolves the thread using multiple signals — SMTP headers first, then routing tokens, then subject matching as a last resort.
+
+## Why subject matching fails
+
+Subject lines are unreliable thread identifiers:
+
+- Email clients prepend prefixes inconsistently — `Re:`, `RE:`, `Aw:`, `Sv:`, `Re: Re:`, `Fwd: Re:`
+- Users edit subjects mid-thread ("Following up on our call" → no match)
+- Forwarding strips the original subject context entirely
+- Corporate gateways (Outlook, Exchange) rewrite subjects with ticket numbers or legal footers
+- International clients use localized reply prefixes that English normalization rules miss
+
+Any threading logic that depends on subject lines will silently create duplicate threads in production.
+
+## RFC 5322 threading (outbound)
+
+When Commune sends a follow-up email in a thread, it sets the standard `In-Reply-To` and `References` headers with the real SMTP `Message-ID` of the previous message. This is the same mechanism every email client uses to build conversation threads.
+
+Commune captures the real Message-ID via a silent self-BCC — completely invisible to the recipient — and stores it for use in follow-up headers. This ensures threading works correctly across all email clients, not just Gmail.
+
+## Priority order (inbound resolution)
+
+When an inbound reply arrives, Commune resolves the thread in this order:
+
+1. **Routing token in Reply-To** — extracted from `agent+{token}@commune.email`; resolves immediately if present
+2. **In-Reply-To header** — standard RFC 5322 header; matched against stored Message-IDs
+3. **References header chain** — the full chain of `Message-ID`s in the thread; matched against any known message
+4. **Subject normalization** — strips prefixes (`Re:`, `Fwd:`, etc.), lowercases, trims; last resort only
+
+## How routing tokens work
+
+When Commune sends an email, it sets the `Reply-To` header to a token-encoded address:
+
+```
+Reply-To: reply+eyJ0aHJlYWRfaWQiOiJ0aHJfMDFIWiJ9@commune.email
+```
+
+The token encodes the `thread_id` directly. When the recipient hits reply, their email client sends to that address. Commune's inbound processor decodes the token from the address — no database lookup required.
+
+Key properties of routing tokens:
+
+- **Survive forwarding** — the `Reply-To` address travels with the email regardless of how many hops it takes
+- **Stateless decode** — the thread context is encoded in the token itself, not referenced from a lookup table
+- **One token per thread** — the same token is reused across all outbound messages in a thread, so any reply in a long chain resolves correctly
+
+## The thread_id field
+
+Every message object has a `thread_id`. The first outbound message in a new conversation starts the thread. All subsequent messages — inbound or outbound — that resolve to the same thread share that `thread_id`.
+
+The webhook payload includes `thread_id` on every inbound event:
+
+```json
+{
+  "event": "inbound",
+  "message": {
+    "id": "msg_01ABC",
+    "thread_id": "thr_01XYZ",
+    "content": "...",
+    "participants": [...]
+  }
+}
+```
+
+Use `thread_id` to fetch thread history before generating a reply.
+
+## Fetch thread history
+
+<CodeGroup>
+
+```typescript TypeScript
+const messages = await commune.messages.list({ threadId: 'thr_01XYZ' });
+
+// Pass to your LLM as conversation history
+const context = messages.map(m => ({
+  role: m.direction === 'inbound' ? 'user' : 'assistant',
+  content: m.content,
+}));
+```
+
+```python Python
+messages = client.messages.list(thread_id="thr_01XYZ")
+
+# Pass to your LLM as conversation history
+context = [
+    {
+        "role": "user" if m.direction == "inbound" else "assistant",
+        "content": m.content,
+    }
+    for m in messages
+]
+```
+
+</CodeGroup>
+
+<Note>
+Messages are returned in chronological order. The first item is the original outbound message that started the thread.
+</Note>
+
+## What can still break threading
+
+Even with routing tokens, some edge cases exist:
+
+- **Manual forward without quoting** — the user creates a new email from scratch; no token, no `In-Reply-To`, no references; Commune may start a new thread
+- **Corporate email gateways rewriting Reply-To** — some Exchange and Proofpoint configurations strip or overwrite custom `Reply-To` addresses before delivery
+- **User switches email client mid-thread** — a new client may not preserve the `References` header chain from the previous client, breaking fallback resolution
+- **Delayed replies across long time windows** — subject normalization fallback only matches against recent threads; very old threads may not match if the sender is new to the inbox
+
+In all these cases, Commune creates a new thread rather than silently attaching to the wrong one. A false negative (new thread when one exists) is always safer than a false positive (appending to the wrong thread).
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="How Email Threading Works" icon="newspaper" href="/blog/how-email-threading-works">
+  In-depth explanation of routing tokens, RFC 5322 headers, and thread resolution edge cases.
+</Card>
+
+<Card title="Threads" icon="comments" href="/features/threads">
+  Thread management API for fetching conversation history and resolving message chains.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Webhook payload reference including the thread_id field on every inbound event.
+</Card>
+
+</Columns>

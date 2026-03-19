@@ -1,0 +1,258 @@
+---
+title: "Example: Support Agent"
+description: Build a customer support agent that receives emails, extracts intent, and sends intelligent replies.
+---
+
+This example builds a complete customer support agent that:
+- Receives inbound customer emails via webhook
+- Extracts structured data (intent, urgency, order number)
+- Generates a contextual reply using an LLM
+- Sends the reply in the same conversation thread
+- Triages threads with status and tags
+
+## Architecture
+
+```
+Customer → Email → Commune webhook → Your server → LLM → Commune send → Customer
+```
+
+## Full implementation
+
+<CodeGroup>
+
+```typescript TypeScript (Express)
+import express from 'express';
+import { CommuneClient } from 'commune-ai';
+import OpenAI from 'openai';
+
+const app = express();
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Step 1: Handle inbound emails
+app.post('/webhook/email', express.json(), async (req, res) => {
+  const { message, extractedData, security } = req.body;
+
+  // Step 2: Check security
+  if (security?.spam?.flagged) {
+    console.log('Spam detected, skipping');
+    return res.json({ ok: true });
+  }
+
+  if (security?.prompt_injection?.risk_level === 'critical') {
+    console.log('Prompt injection detected, skipping');
+    return res.json({ ok: true });
+  }
+
+  const sender = message.participants.find(
+    (p: any) => p.role === 'sender'
+  )?.identity;
+  const subject = message.metadata.subject;
+  const content = message.content;
+
+  // Step 3: Use extracted data for routing
+  const intent = extractedData?.intent || 'general';
+  const urgency = extractedData?.urgency || 'medium';
+  const orderNumber = extractedData?.order_number;
+
+  console.log(`New ${urgency} ${intent} ticket from ${sender}`);
+  if (orderNumber) console.log(`Order: ${orderNumber}`);
+
+  // Step 4: Generate reply with LLM
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: `You are a helpful customer support agent for Acme Corp. 
+Be concise, empathetic, and solution-oriented. 
+If you don't have enough info to resolve the issue, ask a specific follow-up question.
+Never make up order statuses or tracking numbers.`,
+      },
+      {
+        role: 'user',
+        content: `Customer email:
+Subject: ${subject}
+From: ${sender}
+Intent: ${intent}
+Urgency: ${urgency}
+${orderNumber ? `Order: ${orderNumber}` : ''}
+
+Message:
+${content}`,
+      },
+    ],
+  });
+
+  const reply = completion.choices[0].message.content;
+
+  // Step 5: Send reply in the same thread
+  await commune.messages.send({
+    to: sender,
+    subject: `Re: ${subject}`,
+    html: `<p>${reply.replace(/\n/g, '<br>')}</p>`,
+    text: reply,
+    thread_id: message.thread_id,
+  });
+
+  console.log(`Replied to ${sender} in thread ${message.thread_id}`);
+
+  res.json({ ok: true });
+});
+
+app.listen(3000, () => console.log('Support agent running on :3000'));
+```
+
+```python Python (Flask)
+from flask import Flask, request
+from commune import CommuneClient
+from openai import OpenAI
+
+app = Flask(__name__)
+commune_client = CommuneClient(api_key="comm_...")
+openai_client = OpenAI(api_key="sk-...")
+
+
+@app.route("/webhook/email", methods=["POST"])
+def handle_email():
+    data = request.json
+    message = data["message"]
+    extracted = data.get("extractedData", {})
+    security = data.get("security", {})
+
+    # Check security
+    if security.get("spam", {}).get("flagged"):
+        return {"ok": True}
+    if security.get("prompt_injection", {}).get("risk_level") == "critical":
+        return {"ok": True}
+
+    sender = next(
+        p["identity"] for p in message["participants"] if p["role"] == "sender"
+    )
+    subject = message["metadata"]["subject"]
+    content = message["content"]
+    intent = extracted.get("intent", "general")
+    urgency = extracted.get("urgency", "medium")
+    order_number = extracted.get("order_number")
+
+    # Generate reply
+    completion = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful customer support agent for Acme Corp. "
+                    "Be concise, empathetic, and solution-oriented."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Subject: {subject}\nFrom: {sender}\n"
+                f"Intent: {intent}, Urgency: {urgency}\n"
+                f"{'Order: ' + order_number if order_number else ''}\n\n"
+                f"{content}",
+            },
+        ],
+    )
+
+    reply = completion.choices[0].message.content
+
+    # Send reply in thread
+    commune_client.messages.send(
+        to=sender,
+        subject=f"Re: {subject}",
+        html=f"<p>{reply}</p>",
+        text=reply,
+        thread_id=message["thread_id"],
+    )
+
+    return {"ok": True}
+
+
+if __name__ == "__main__":
+    app.run(port=3000)
+```
+
+</CodeGroup>
+
+## Setup steps
+
+<Steps>
+
+<Step title="Create an inbox with extraction schema">
+
+```bash
+# Create inbox with webhook
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -d '{
+    "local_part": "support",
+    "name": "Support Agent",
+    "display_name": "Acme Support",
+    "webhook": { "endpoint": "https://your-server.com/webhook/email" }
+  }'
+
+# Configure extraction schema
+curl -X PUT "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID/extraction-schema" \
+  -H "Authorization: Bearer comm_..." \
+  -d '{
+    "name": "support_ticket",
+    "enabled": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "intent": { "type": "string", "enum": ["billing", "technical", "shipping", "returns", "general"] },
+        "urgency": { "type": "string", "enum": ["low", "medium", "high"] },
+        "order_number": { "type": "string", "description": "Order or reference number" },
+        "summary": { "type": "string", "description": "One-line summary" }
+      }
+    }
+  }'
+```
+
+</Step>
+
+<Step title="Deploy your webhook server">
+
+Deploy the Express/Flask server above to a public URL (Railway, Vercel, Fly.io, etc.).
+
+</Step>
+
+<Step title="Test it">
+
+Send an email to `support@yourdomain.com` and watch the agent respond automatically.
+
+</Step>
+
+</Steps>
+
+## What to build next
+
+- **Knowledge base integration** — query your docs before generating replies
+- **Escalation rules** — auto-assign `high` urgency threads to a human
+- **Multi-turn context** — read previous messages in the thread before replying
+- **CRM integration** — look up customer data using the extracted order number
+- **Analytics dashboard** — track response times, resolution rates, and sentiment trends
+
+## Related docs
+
+<Columns cols={2}>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Configure JSON schemas to extract intent, urgency, and order numbers.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Full webhook payload reference and delivery guarantees.
+</Card>
+
+<Card title="Prompt Injection Detection" icon="robot" href="/security/prompt-injection">
+  Handle the security context in your webhook handler.
+</Card>
+
+<Card title="Threads" icon="comments" href="/features/threads">
+  Triage threads with status and tags as your agent processes emails.
+</Card>
+
+</Columns>

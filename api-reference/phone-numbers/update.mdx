@@ -1,0 +1,183 @@
+---
+title: "Update Phone Number"
+api: "PATCH /v1/phone-numbers/{id}"
+description: "Update a phone number's friendly name, webhook configuration, or auto-reply settings."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const updated = await commune.phoneNumbers.update('pn_01abc123', {
+  friendlyName: 'Customer Support',
+  webhook: {
+    url: 'https://your-app.com/webhooks/sms',
+    secret: 'whsec_your_signing_secret',
+  },
+  autoReply: {
+    enabled: true,
+    body: "Thanks for your message! We'll respond within 1 business day.",
+  },
+});
+
+console.log(updated.friendlyName);  // Customer Support
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+updated = client.phone_numbers.update(
+    "pn_01abc123",
+    friendly_name="Customer Support",
+    webhook={
+        "endpoint": "https://your-app.com/webhooks/sms",
+        "secret": "whsec_your_signing_secret",
+    },
+    auto_reply={
+        "enabled": True,
+        "body": "Thanks for your message! We'll respond within 1 business day.",
+    },
+)
+
+print(updated.friendly_name)  # Customer Support
+```
+```bash MCP
+update_phone_number(
+  id="pn_01abc123",
+  friendly_name="Customer Support",
+  webhook_url="https://your-app.com/webhooks/sms",
+  auto_reply_body="Thanks for your message!"
+)
+```
+```bash cURL
+curl -X PATCH https://api.commune.email/v1/phone-numbers/pn_01abc123 \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "friendly_name": "Customer Support",
+    "webhook": {
+      "endpoint": "https://your-app.com/webhooks/sms",
+      "secret": "whsec_your_signing_secret",
+      "events": ["sms.received", "sms.sent"]
+    },
+    "auto_reply": {
+      "enabled": true,
+      "body": "Thanks for your message! We will respond within 1 business day."
+    }
+  }'
+```
+```bash CLI
+commune phone-numbers update pn_01abc123 \
+  --webhook-url "https://your-app.com/webhooks/sms" \
+  --auto-reply-body "Thanks for your message!"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "id": "pn_01abc123",
+    "number": "+18005550001",
+    "numberType": "tollfree",
+    "friendlyName": "Customer Support",
+    "country": "US",
+    "capabilities": {
+      "sms": true,
+      "mms": true,
+      "voice": true
+    },
+    "status": "active",
+    "allowList": [],
+    "blockList": [],
+    "creditCostPerMonth": 150,
+    "autoReply": {
+      "enabled": true,
+      "body": "Thanks for your message! We'll respond within 1 business day."
+    },
+    "createdAt": "2026-02-01T00:00:00.000Z",
+    "updatedAt": "2026-02-25T10:00:00.000Z"
+  }
+}
+```
+```json 400 Bad Request
+{
+  "error": {
+    "fieldErrors": {
+      "webhook": {
+        "endpoint": ["Invalid url"]
+      }
+    }
+  }
+}
+```
+```json 404 Not Found
+{
+  "error": "Phone number not found"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The phone number ID. Format: `pn_...`
+</ParamField>
+
+## Body
+
+All fields are optional. Only provided fields are updated.
+
+<ParamField body="friendly_name" type="string">
+  Display name for this number (max 100 characters).
+</ParamField>
+
+<ParamField body="webhook" type="object">
+  Webhook configuration for inbound and outbound SMS events.
+
+  <Expandable title="properties">
+    <ParamField body="endpoint" type="string">
+      HTTPS URL where Commune will POST SMS events. Must be a valid URL.
+    </ParamField>
+    <ParamField body="secret" type="string">
+      Signing secret used to generate the `X-Commune-Signature` header. Store this securely and verify it on your server to confirm payloads originate from Commune.
+    </ParamField>
+    <ParamField body="events" type="string[]">
+      Array of event types to send to this webhook. Examples: `sms.received`, `sms.sent`, `sms.status_updated`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="auto_reply" type="object">
+  Automatic reply sent to every inbound message.
+
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean" required>
+      Whether auto-reply is active.
+    </ParamField>
+    <ParamField body="body" type="string" required>
+      The auto-reply message text (max 1600 characters). Credits are charged per auto-reply sent.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  The updated phone number record. See [Get Phone Number](/api-reference/phone-numbers/get) for the full response schema.
+</ResponseField>
+
+<Note>
+**Webhook signing:** When a webhook `endpoint` is set, Commune sends an `X-Commune-Signature` header with each request. The signature is an HMAC-SHA256 of the request body using your webhook `secret`. Verify this header on your server to confirm the request is authentic.
+
+```
+X-Commune-Signature: sha256=abc123...
+```
+</Note>
+
+<Note>
+**Auto-reply credits:** Each auto-reply consumes the same credits as a regular outbound SMS (2 credits per segment for US numbers).
+</Note>

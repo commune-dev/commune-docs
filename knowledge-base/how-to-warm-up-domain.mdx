@@ -1,0 +1,112 @@
+---
+title: How do I warm up a new sending domain?
+description: Domain warmup gradually increases sending volume to build sender reputation with inbox providers before sending at scale.
+---
+
+## The short answer
+
+Don't send 1,000 emails on day 1 from a new domain. Inbox providers have never seen you before — a sudden volume spike triggers spam filters immediately. Ramp up gradually over 14 days, starting at 50 emails/day, and let your reputation build before sending at scale.
+
+## Why warmup matters
+
+Inbox providers assign a reputation score to every sending domain and IP. New domains have zero history — no reputation, no trust. ISPs can't distinguish you from a spammer who just registered a domain to blast a list. Volume spikes from unknown senders are one of the strongest spam signals that exist.
+
+Reputation is earned per domain and per IP. It can take weeks to build and minutes to destroy. The warmup period is your opportunity to demonstrate that recipients want your emails — high open rates, low bounces, zero complaints — before you scale.
+
+## The warmup ramp
+
+| Day range | Daily send limit |
+|-----------|-----------------|
+| Days 1-3 | 50 |
+| Days 4-7 | 200 |
+| Days 8-11 | 1,000 |
+| Days 12-14 | 5,000 |
+| Day 15+ | Full volume |
+
+Total volume over 14 days: approximately 28,000 emails. This is the minimum ramp. If you see warning signals during any phase, slow down — don't accelerate to the next tier.
+
+## What Commune handles automatically
+
+Warmup is built into every inbox on a new domain. When you create an inbox, the warmup schedule starts immediately. You don't configure it, manage it, or track it manually.
+
+- Commune enforces the daily send limit per warmup phase
+- Emails that exceed the current limit are queued, not dropped
+- Health monitoring runs continuously — if bounce rate exceeds 3%, sending is automatically paused until you review
+
+You don't need to think about the mechanics. The ramp runs in the background.
+
+## What you control
+
+Commune handles the schedule. You control what gets sent during warmup — and that matters.
+
+- **Send to engaged addresses first.** Your best recipients go first: people who opted in recently, existing customers, people who have replied to you before. Cold lists during warmup are the fastest way to spike your bounce and complaint rate.
+- **Avoid attachments.** Attachments add spam scoring weight. Keep warmup emails clean text or minimal HTML.
+- **Keep subject lines clean.** Avoid all-caps, excessive punctuation, or words that trigger spam classifiers ("free", "urgent", "act now"). During warmup, you have no reputation buffer.
+
+## Danger signals during warmup
+
+Stop or slow down immediately if you see any of these:
+
+| Signal | Threshold | Action |
+|--------|-----------|--------|
+| Bounce rate | > 5% | Stop immediately. Audit your list. |
+| Complaint rate | > 0.1% | Stop immediately. Do not resume until resolved. |
+| Spam folder placement | > 10% | Slow down. Check content and list quality. |
+
+Commune auto-pauses on bounce rate exceeding 3% during warmup — a tighter threshold than normal operations. This is intentional. Reputation damage during warmup is harder to recover from than at full scale.
+
+## Code: check warmup status
+
+<CodeGroup>
+
+```typescript TypeScript
+import Commune from "@commune-email/sdk";
+
+const commune = new Commune({ apiKey: "comm_..." });
+
+const inbox = await commune.inboxes.get("inbox_id");
+
+console.log(inbox.health.warmupStatus);
+// "warming" | "complete" | "paused"
+console.log(inbox.health.warmupDay);
+// 7
+console.log(inbox.health.currentDailyLimit);
+// 200
+```
+
+```python Python
+import commune
+
+client = commune.Commune(api_key="comm_...")
+
+inbox = client.inboxes.get("inbox_id")
+
+print(inbox.health.warmup_status)
+# "warming" | "complete" | "paused"
+print(inbox.health.warmup_day)
+# 7
+print(inbox.health.current_daily_limit)
+# 200
+```
+
+</CodeGroup>
+
+`warmupStatus` values: `warming` (ramp in progress), `complete` (full volume unlocked), `paused` (health threshold exceeded, sending stopped).
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Why Agent Emails Land in Spam" icon="newspaper" href="/blog/why-agent-emails-land-in-spam">
+  Deep-dive into deliverability signals and the specific patterns that trigger spam filters.
+</Card>
+
+<Card title="Sending Agent Email at Scale" icon="newspaper" href="/blog/agent-email-at-scale">
+  Architecture guide for managing warmup and high-volume sends across many agent inboxes.
+</Card>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track inbox health, bounce rates, and warmup status across all your sending domains.
+</Card>
+
+</Columns>

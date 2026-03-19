@@ -1,0 +1,120 @@
+---
+title: How do I use Commune with n8n?
+description: Use Commune's REST API with n8n's HTTP Request node to send email, receive inbound webhooks, and build email-driven automation workflows.
+---
+
+## The short answer
+
+There is no native Commune node for n8n yet — one is planned. In the meantime, use n8n's built-in **HTTP Request** node to call Commune's REST API directly. For inbound email, use n8n's **Webhook** node as the trigger and register the URL with Commune so your workflow runs on every incoming message.
+
+## Sending email from n8n
+
+Add an **HTTP Request** node to your workflow and configure it as follows:
+
+- **Method:** POST
+- **URL:** `https://api.commune.email/v1/messages`
+- **Authentication:** Generic Credential Type → see [Authentication](#authentication) below
+- **Body Content Type:** JSON
+
+JSON body:
+
+```json
+{
+  "to": "recipient@example.com",
+  "subject": "Your request has been received",
+  "body": "We got your message and will follow up shortly.",
+  "from": "support@yourdomain.com",
+  "inboxId": "INBOX_ID"
+}
+```
+
+Map any of these fields to upstream node outputs using n8n expressions. For example, set `"to"` to `{{ $json.senderEmail }}` to reply to whoever triggered the workflow.
+
+## Receiving email in n8n
+
+**Step 1: Add a Webhook node**
+
+Add a **Webhook** node as the workflow trigger. Set the HTTP Method to **POST**. Copy the webhook URL that n8n generates — it looks like `https://your-n8n-instance.com/webhook/abc123`.
+
+**Step 2: Register the webhook with Commune**
+
+Register the URL on the inbox you want to listen to. You can do this in the Commune dashboard under inbox settings, or via the API:
+
+```bash
+curl -X PATCH https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID/webhook \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhookUrl": "https://your-n8n-instance.com/webhook/abc123"
+  }'
+```
+
+Every inbound email to that inbox now triggers your n8n workflow. The Webhook node's output contains the full email payload.
+
+## Working with extracted data
+
+If you have a structured extraction schema configured on the inbox, the webhook payload includes an `extractedData` field alongside the message:
+
+```json
+{
+  "message": { "from": "...", "subject": "...", "body": "..." },
+  "extractedData": {
+    "intent": "billing",
+    "urgency": "high",
+    "order_number": "ORD-12345",
+    "summary": "Customer received an incorrect charge"
+  }
+}
+```
+
+Use a **Set** node after the Webhook trigger to pull out the fields you need:
+
+- Set `intent` to `{{ $json.body.extractedData.intent }}`
+- Set `urgency` to `{{ $json.body.extractedData.urgency }}`
+
+Then add a **Switch** node branching on `intent` to route the workflow:
+
+- `billing` → HTTP Request to billing system
+- `technical` → create a support ticket
+- `cancellation` → trigger a retention workflow
+- default → send a generic acknowledgement email
+
+Always treat `extractedData` as optional. If extraction fails, the field will be `null`. Use a fallback in your Switch condition or add an **IF** node to check for null before branching.
+
+## Authentication
+
+Store your Commune API key in n8n's credential manager — never hardcode it in a node.
+
+1. Go to **Credentials** → **New Credential** → **Generic Credential Type**
+2. Set the credential name (e.g., `Commune API`)
+3. Add a header parameter: **Name** `Authorization`, **Value** `Bearer comm_YOUR_KEY_HERE`
+4. In each HTTP Request node, set **Authentication** to **Generic Credential Type** and select the credential you created
+
+This keeps your key out of workflow definitions and prevents it from appearing in logs or exports.
+
+## Limitations without a native node
+
+Without a dedicated Commune node, there are a few gaps to be aware of:
+
+- **Error handling is manual.** The HTTP Request node does not retry failed requests by default. Add an **IF** node checking the response status code and wire a retry or alert branch yourself.
+- **No visual schema builder.** Configuring a structured extraction schema requires a raw JSON body in an HTTP Request node. There is no form-based UI like you would get with a native node.
+- **Manual JSON parsing.** Fields from `extractedData` must be accessed with n8n expressions. There is no auto-mapping or field discovery.
+- **Webhook security is your responsibility.** Validate that incoming requests are genuinely from Commune by checking a shared secret header if your n8n instance is publicly accessible.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Full webhook payload reference for building inbound email triggers in n8n.
+</Card>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Configure JSON extraction schemas to automatically parse fields from inbound emails.
+</Card>
+
+<Card title="REST API" icon="book" href="/sdks/rest-api">
+  Complete API reference for all Commune endpoints used with HTTP Request nodes.
+</Card>
+
+</Columns>

@@ -1,0 +1,120 @@
+---
+title: "List Conversations"
+api: "GET /v1/sms/conversations"
+description: "List SMS conversation threads, grouped by remote phone number. Returns the most recent message preview and unread count for each conversation."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const { data, next_cursor } = await commune.sms.listConversations({
+  phoneNumberId: 'pn_01abc123',
+});
+
+for (const conv of data) {
+  console.log(conv.remote_number, conv.unread_count, conv.last_message_preview);
+}
+
+// Fetch next page
+if (next_cursor) {
+  const page2 = await commune.sms.listConversations({
+    phoneNumberId: 'pn_01abc123',
+    cursor: next_cursor,
+  });
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.sms.list_conversations(phone_number_id="pn_01abc123")
+
+for conv in result.data:
+    print(conv.remote_number, conv.unread_count, conv.last_message_preview)
+```
+```bash MCP
+list_sms_conversations(phone_number_id="pn_01abc123")
+```
+```bash cURL
+curl "https://api.commune.email/v1/sms/conversations?phone_number_id=pn_01abc123" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune sms conversations
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+      "remote_number": "+14155559999",
+      "last_message_at": "2026-02-25T10:05:00.000Z",
+      "last_message_preview": "Got it, thanks!",
+      "message_count": 4,
+      "unread_count": 1
+    },
+    {
+      "thread_id": "b2c3d4e5f6789012345678901234abcd",
+      "remote_number": "+14085558888",
+      "last_message_at": "2026-02-24T15:30:00.000Z",
+      "last_message_preview": "Your order has shipped.",
+      "message_count": 2,
+      "unread_count": 0
+    }
+  ],
+  "next_cursor": "eyJsYXN0X21lc3NhZ2VfYXQiOiIyMDI2LTAyLTI0VDE1OjMwOjAwLjAwMFoiLCJpZCI6ImIyYzMifQ"
+}
+```
+</ResponseExample>
+
+## Query Parameters
+
+<ParamField query="phone_number_id" type="string">
+  Filter conversations to a specific Commune phone number. Format: `pn_...`. If omitted, returns conversations across all phone numbers.
+</ParamField>
+
+<ParamField query="limit" type="number" default="50">
+  Maximum conversations to return. Maximum: 100.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Opaque pagination cursor from a previous response's `next_cursor` field.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="Conversation[]">
+  Array of conversations sorted by `last_message_at` descending (most recent first).
+
+  <Expandable title="Conversation properties" defaultOpen>
+    <ResponseField name="thread_id" type="string">
+      Conversation thread ID (32 hex characters). Use this to fetch all messages in the thread via `GET /v1/sms/conversations/{remoteNumber}`.
+    </ResponseField>
+    <ResponseField name="remote_number" type="string">
+      The external phone number (not your Commune number) in E.164 format.
+    </ResponseField>
+    <ResponseField name="last_message_at" type="string">
+      ISO 8601 timestamp of the most recent message in this conversation.
+    </ResponseField>
+    <ResponseField name="last_message_preview" type="string | null">
+      Truncated preview of the last message (max 120 characters). Encrypted previews are decrypted before returning.
+    </ResponseField>
+    <ResponseField name="message_count" type="number">
+      Total number of messages in this conversation.
+    </ResponseField>
+    <ResponseField name="unread_count" type="number">
+      Number of unread inbound messages.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string | null">
+  Cursor for the next page of results. `null` when there are no more pages. Pass this value as the `cursor` query parameter in your next request.
+</ResponseField>

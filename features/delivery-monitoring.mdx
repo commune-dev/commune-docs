@@ -1,0 +1,284 @@
+---
+title: Delivery & Monitoring
+description: Track delivery rates, bounce and complaint metrics, and manage suppressed addresses per inbox or domain.
+---
+
+Every outbound email is tracked from send through delivery, bounce, or complaint. Query aggregate metrics, inspect individual delivery events, and view suppressed addresses.
+
+## Delivery metrics
+
+Get aggregate delivery statistics for an inbox or domain over a time period.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Via REST API
+const res = await fetch(
+  'https://api.commune.email/v1/delivery/metrics?inbox_id=inbox_abc&period=7d',
+  { headers: { Authorization: `Bearer ${apiKey}` } }
+);
+const { data } = await res.json();
+
+console.log(`Sent: ${data.sent}`);
+console.log(`Delivery rate: ${data.delivery_rate}`);
+console.log(`Bounce rate: ${data.bounce_rate}`);
+```
+
+```python Python
+# Via REST API
+import requests
+
+resp = requests.get(
+    "https://api.commune.email/v1/delivery/metrics",
+    headers={"Authorization": f"Bearer {api_key}"},
+    params={"inbox_id": "inbox_abc", "period": "7d"},
+)
+metrics = resp.json()["data"]
+print(f"Sent: {metrics['sent']}, Delivery rate: {metrics['delivery_rate']}")
+```
+
+```bash MCP
+get_deliverability_stats(inbox_id="inbox_abc", period="7d")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/delivery/metrics?inbox_id=inbox_abc&period=7d" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `inbox_id` | `string` | No* | Filter by inbox |
+| `domain_id` | `string` | No* | Filter by domain |
+| `period` | `string` | No | Time period: `24h`, `7d`, `30d` (default: `7d`) |
+| `days` | `number` | No | Alternative: number of days (max 90) |
+
+<Note>At least one of `inbox_id` or `domain_id` is required.</Note>
+
+### Response
+
+```json
+{
+  "data": {
+    "inbox_id": "inbox_abc",
+    "period": {
+      "start": "2026-02-07T00:00:00Z",
+      "end": "2026-02-14T00:00:00Z",
+      "days": 7
+    },
+    "sent": 1247,
+    "delivered": 1225,
+    "bounced": 15,
+    "complained": 2,
+    "failed": 3,
+    "suppressed": 2,
+    "orphan_events": 0,
+    "delivery_rate": "98.2%",
+    "bounce_rate": "1.2%",
+    "complaint_rate": "0.2%",
+    "failure_rate": "0.2%",
+    "suppression_rate": "0.2%",
+    "orphan_event_rate": "0.0%"
+  }
+}
+```
+
+### Metric definitions
+
+| Metric | Description |
+|--------|-------------|
+| `sent` | Total emails sent in the period |
+| `delivered` | Successfully delivered to recipient's mailbox |
+| `bounced` | Rejected by recipient's mail server (hard or soft bounce) |
+| `complained` | Recipient marked as spam |
+| `failed` | Technical delivery failure |
+| `suppressed` | Skipped because recipient was on suppression list |
+| `orphan_events` | Delivery events with no matching sent message |
+
+### Healthy thresholds
+
+| Metric | Healthy | Warning | Critical |
+|--------|---------|---------|----------|
+| Delivery rate | > 98% | 95–98% | < 95% |
+| Bounce rate | < 2% | 2–5% | > 5% |
+| Complaint rate | < 0.1% | 0.1–0.3% | > 0.3% |
+
+<Warning>
+  Email providers (Gmail, Outlook) may throttle or block your domain if complaint rates exceed 0.3% or bounce rates exceed 5%. Commune automatically pauses sending when rates reach critical thresholds to protect your reputation.
+</Warning>
+
+---
+
+## Delivery events
+
+Get the raw event log showing individual email delivery lifecycle events.
+
+<CodeGroup>
+
+```bash MCP
+get_delivery_events(inbox_id="inbox_abc", event_type="bounced", limit=20)
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/delivery/events?inbox_id=inbox_abc&limit=50" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `inbox_id` | `string` | No* | Filter by inbox |
+| `domain_id` | `string` | No* | Filter by domain |
+| `message_id` | `string` | No* | Filter by message ID |
+| `event_type` | `string` | No | Filter: `sent`, `delivered`, `bounced`, `complained`, `failed` |
+| `limit` | `number` | No | Max results (1–200, default 50) |
+
+<Note>Provide at least one of `inbox_id`, `domain_id`, or `message_id`.</Note>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "_id": "evt_001",
+      "message_id": "msg_8f3a2b1c",
+      "event_type": "delivered",
+      "processed_at": "2026-02-14T10:30:15Z",
+      "inbox_id": "inbox_abc",
+      "domain_id": "d_abc123"
+    },
+    {
+      "_id": "evt_002",
+      "message_id": "msg_7e2a1b0c",
+      "event_type": "bounced",
+      "processed_at": "2026-02-14T09:15:30Z",
+      "inbox_id": "inbox_abc",
+      "domain_id": "d_abc123"
+    }
+  ]
+}
+```
+
+### Event types
+
+| Event | Description |
+|-------|-------------|
+| `sent` | Email accepted by the email provider for delivery |
+| `delivered` | Email successfully delivered to recipient's inbox |
+| `bounced` | Recipient's server rejected the email |
+| `complained` | Recipient marked the email as spam |
+| `failed` | Technical failure during delivery |
+| `delivery_delayed` | Delivery is being retried by the provider |
+| `suppressed` | Sending was skipped due to suppression list |
+
+---
+
+## Suppressions
+
+List email addresses that have been suppressed (auto-blocked from future sends).
+
+<CodeGroup>
+
+```bash MCP
+get_suppressions(inbox_id="inbox_abc", limit=50)
+# or
+get_suppressions(domain_id="d_abc123", limit=50)
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/delivery/suppressions?inbox_id=inbox_abc" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `inbox_id` | `string` | No* | Filter by inbox |
+| `domain_id` | `string` | No* | Filter by domain |
+
+<Note>At least one of `inbox_id` or `domain_id` is required.</Note>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "email": "bounced-user@example.com",
+      "reason": "hard_bounce",
+      "suppressed_at": "2026-02-10T14:20:00Z",
+      "inbox_id": "inbox_abc"
+    },
+    {
+      "email": "unsubscribed@example.com",
+      "reason": "complaint",
+      "suppressed_at": "2026-02-12T09:15:00Z",
+      "inbox_id": "inbox_abc"
+    }
+  ]
+}
+```
+
+### Suppression reasons
+
+| Reason | Description | Duration |
+|--------|-------------|----------|
+| `hard_bounce` | Permanent delivery failure (address doesn't exist) | Permanent |
+| `soft_bounce` | 3+ consecutive temporary failures | 7 days (auto-expires) |
+| `complaint` | Recipient marked email as spam | Permanent |
+| `unsubscribe` | Recipient clicked unsubscribe | Permanent |
+
+### How suppression works
+
+When you send to a suppressed address, Commune automatically:
+1. Skips sending to that recipient
+2. Returns a `validation.suppressed` entry in the send response
+3. Counts it as a `suppressed` event (not a send)
+
+This protects your sender reputation by never re-sending to addresses that have rejected your email.
+
+## Automatic protections
+
+Commune includes several automatic systems to protect your deliverability:
+
+### Sending health gate
+If your bounce or complaint rates exceed critical thresholds, Commune temporarily pauses outbound sending for that inbox. You'll receive an alert, and sending resumes once rates normalize.
+
+### Warmup gate
+New inboxes start with a lower daily sending limit that gradually increases. This prevents new domains from being flagged as spam by sending too much too quickly.
+
+### Soft bounce tracking
+Soft bounces (temporary failures) are tracked per recipient. After 3 consecutive soft bounces within 7 days, the address is temporarily suppressed. The counter resets when a successful delivery occurs.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Understand warmup gates, burst detection, and sending health gates.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-halved" href="/security/spam-prevention">
+  Inbound spam scoring and outbound content validation.
+</Card>
+
+<Card title="Email Authentication" icon="fingerprint" href="/security/email-authentication">
+  DKIM, SPF, and DMARC — the foundation of deliverability.
+</Card>
+
+<Card title="Domains" icon="globe" href="/features/domains">
+  Add a custom domain to isolate your sender reputation.
+</Card>
+
+</Columns>

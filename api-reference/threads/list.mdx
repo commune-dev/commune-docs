@@ -1,0 +1,151 @@
+---
+title: "List threads"
+api: "GET /v1/threads"
+description: "List email threads with cursor-based pagination, filtered by inbox or domain."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const result = await commune.threads.list({
+  inboxId: 'inbox_abc123',
+  limit: 20,
+});
+
+console.log(result.data.length);    // up to 20 threads
+console.log(result.next_cursor);    // pass to next call for more
+console.log(result.has_more);       // true if more pages exist
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.threads.list(
+    inbox_id="inbox_abc123",
+    limit=20,
+)
+
+print(result.next_cursor)
+```
+```bash MCP
+list_threads(inbox_id="inbox_abc123", limit=20)
+```
+```bash cURL
+curl "https://api.commune.email/v1/threads?inbox_id=inbox_abc123&limit=20&order=desc" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune threads list --inbox-id inbox_abc123
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "thread_id": "thread_f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "subject": "Order help",
+      "last_message_at": "2026-02-25T10:30:00.000Z",
+      "first_message_at": "2026-02-25T09:00:00.000Z",
+      "message_count": 3,
+      "snippet": "Hi, I need help with my order.",
+      "last_direction": "inbound",
+      "inbox_id": "inbox_abc123",
+      "domain_id": "domain_xyz789",
+      "has_attachments": false
+    }
+  ],
+  "next_cursor": "eyJsYXN0X21lc3NhZ2VfYXQiOiIyMDI2LTAyLTI1VDEwOjMwOjAwLjAwMFoiLCJpZCI6InRocmVhZF9mNDdhYzEwYiJ9",
+  "has_more": true
+}
+```
+```json 400 Bad Request
+{
+  "error": "Missing required query parameter: inbox_id or domain_id"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Query Parameters
+
+<Note>
+At least one of `inbox_id` or `domain_id` is required.
+</Note>
+
+<ParamField query="inbox_id" type="string">
+  Filter threads to a specific inbox. Takes precedence over `domain_id`.
+</ParamField>
+
+<ParamField query="domain_id" type="string">
+  Filter threads to all inboxes on a specific domain.
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Maximum number of threads per page. Range: 1–100.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from the `next_cursor` field of a previous response. Pass this to fetch the next page.
+</ParamField>
+
+<ParamField query="order" type="string" default="desc">
+  Sort order by `last_message_at`. One of: `desc` (most recent first) or `asc` (oldest first).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object[]">
+  Array of thread summary objects.
+
+  <Expandable title="Thread object properties" defaultOpen>
+    <ResponseField name="thread_id" type="string">
+      Unique thread identifier. Format: `thread_<uuid>`.
+    </ResponseField>
+    <ResponseField name="subject" type="string">
+      Subject line of the first message in this thread.
+    </ResponseField>
+    <ResponseField name="last_message_at" type="string">
+      ISO 8601 timestamp of the most recent message in the thread.
+    </ResponseField>
+    <ResponseField name="first_message_at" type="string">
+      ISO 8601 timestamp of the first message in the thread.
+    </ResponseField>
+    <ResponseField name="message_count" type="number">
+      Total number of messages in the thread.
+    </ResponseField>
+    <ResponseField name="snippet" type="string">
+      Plain text preview of the most recent message body. Truncated to 200 characters.
+    </ResponseField>
+    <ResponseField name="last_direction" type="string">
+      Direction of the most recent message. One of: `inbound`, `outbound`.
+    </ResponseField>
+    <ResponseField name="inbox_id" type="string">
+      ID of the inbox this thread is associated with.
+    </ResponseField>
+    <ResponseField name="domain_id" type="string">
+      ID of the domain this thread is associated with.
+    </ResponseField>
+    <ResponseField name="has_attachments" type="boolean">
+      `true` if any message in this thread has attachments.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string | null">
+  Opaque cursor string to pass as `cursor` in your next request to fetch the next page. `null` when there are no more results.
+</ResponseField>
+
+<ResponseField name="has_more" type="boolean">
+  `true` if there are additional pages of results available.
+</ResponseField>

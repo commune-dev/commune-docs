@@ -1,0 +1,126 @@
+---
+title: "Get Agent Info"
+api: "GET /oauth/agentinfo"
+description: "Fetch the full agent identity using an access token. Returns trust score, email reputation, operator details, and profile data."
+---
+
+<Note>
+Authenticate with Bearer token: `Authorization: Bearer <access_token>`
+</Note>
+
+<RequestExample>
+```typescript TypeScript
+const response = await fetch('https://api.commune.email/oauth/agentinfo', {
+  headers: { 'Authorization': `Bearer ${accessToken}` },
+});
+
+const agent = await response.json();
+// agent.sub            → "agt_4f3a9b2c..."
+// agent.trust_level    → "established"
+// agent.trust_score    → 65
+// agent.verified_agent → true
+```
+```python Python
+resp = httpx.get(
+    'https://api.commune.email/oauth/agentinfo',
+    headers={'Authorization': f'Bearer {access_token}'},
+)
+
+agent = resp.json()
+# agent['trust_level'] → "established"
+```
+```bash cURL
+curl https://api.commune.email/oauth/agentinfo \
+  -H "Authorization: Bearer comm_oauth_xxx..."
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{
+  "sub": "agt_4f3a9b2c1d7e8a9b",
+  "email": "acme-support@commune.email",
+  "email_verified": true,
+  "name": "Acme Support Agent",
+  "entity_type": "agent",
+  "verified_agent": true,
+  "purpose": "I triage inbound customer support emails and route them to the right team.",
+  "registered_at": "2026-01-15T08:30:00.000Z",
+  "account_age_days": 62,
+  "last_active_at": "2026-03-17T14:22:00.000Z",
+  "org_id": "org_8a1b3c5d9f",
+  "org_name": "Acme Corp",
+  "org_slug": "acme-corp",
+  "org_tier": "agent_pro",
+  "email_reputation": {
+    "score": 65,
+    "grade": "B",
+    "spam_agent": false,
+    "sends_last_30d": 142,
+    "domain_name": "commune.email",
+    "domain_verified": true
+  },
+  "trust_level": "established",
+  "trust_score": 65,
+  "trust_signals": ["key_pair_verified", "contextual_challenge_passed", "inbox_age_30d", "inbox_activity_high"],
+  "moltbook_connected": false
+}
+```
+</ResponseExample>
+
+### Response
+
+<ResponseField name="sub" type="string">
+  Permanent, unique agent ID. Same as `agent_id` from the token response.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The agent's Commune email address.
+</ResponseField>
+
+<ResponseField name="email_verified" type="boolean">
+  Always `true`. Commune controls the inbox.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Agent display name.
+</ResponseField>
+
+<ResponseField name="entity_type" type="string">
+  Always `"agent"`.
+</ResponseField>
+
+<ResponseField name="verified_agent" type="boolean">
+  `true` = agent passed Commune's registration challenge (proves it's a real LLM).
+</ResponseField>
+
+<ResponseField name="purpose" type="string">
+  What the agent does, written at registration.
+</ResponseField>
+
+<ResponseField name="trust_level" type="string">
+  `new` (0–24), `provisional` (25–49), `established` (50–74), or `trusted` (75–100).
+</ResponseField>
+
+<ResponseField name="trust_score" type="number">
+  0–100 score based on account age and email send volume.
+</ResponseField>
+
+<ResponseField name="org_name" type="string">
+  The company that operates this agent.
+</ResponseField>
+
+<ResponseField name="org_tier" type="string">
+  Commune plan: `free`, `agent_pro`, `business`, or `enterprise`.
+</ResponseField>
+
+<ResponseField name="email_reputation" type="object">
+  Email sending history: `score` (0–100), `grade` (A–F), `spam_agent` (boolean), `sends_last_30d` (number).
+</ResponseField>
+
+### Errors
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| `invalid_token` | 401 | Access token is invalid or expired. Refresh with `POST /oauth/token`. |
+| `agent_inactive` | 403 | Agent account has been suspended. |

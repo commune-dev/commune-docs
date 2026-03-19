@@ -1,0 +1,276 @@
+---
+title: Domains
+description: Add a custom domain with DKIM, SPF, and DMARC or start instantly on a shared domain.
+---
+
+Every inbox lives on a domain. Use the shared domain to start sending immediately, or add a custom domain for branded addresses and isolated sender reputation.
+
+## Shared domain vs custom domain
+
+| | Shared domain | Custom domain |
+|---|---|---|
+| **Setup** | Instant — no DNS required | 5 min DNS configuration |
+| **Address format** | `agent@agents.commune.email` | `agent@yourdomain.com` |
+| **DKIM signing** | Commune's key | Your domain's key |
+| **Sender reputation** | Shared across tenants | Isolated to your org |
+| **Best for** | Getting started, prototyping | Production, branded emails |
+
+## Create a custom domain
+
+<CodeGroup>
+
+```typescript TypeScript
+const domain = await commune.domains.create({ name: 'mail.mycompany.com' });
+console.log(domain.id); // Use this ID for subsequent operations
+```
+
+```python Python
+domain = client.domains.create(name="mail.mycompany.com")
+print(domain.id)
+```
+
+```bash MCP
+create_domain(name="mail.mycompany.com")
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/domains \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "mail.mycompany.com"}'
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | `string` | Yes | Domain name (e.g., `mail.mycompany.com`) |
+| `region` | `string` | No | AWS region (e.g., `us-east-1`, `eu-west-1`) |
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "d_abc123",
+    "name": "mail.mycompany.com",
+    "status": "pending",
+    "region": "us-east-1",
+    "createdAt": "2026-02-14T10:00:00Z"
+  }
+}
+```
+
+---
+
+## Get DNS records
+
+After creating a domain, retrieve the DNS records you need to add at your registrar.
+
+<CodeGroup>
+
+```typescript TypeScript
+const records = await commune.domains.records('d_abc123');
+for (const record of records) {
+  console.log(`${record.type} ${record.name} → ${record.value}`);
+}
+```
+
+```python Python
+records = client.domains.records("d_abc123")
+for record in records:
+    print(f"{record.type} {record.name} → {record.value}")
+```
+
+```bash MCP
+get_domain_records(domain_id="d_abc123")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/domains/d_abc123/records" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Example DNS records
+
+The API returns records like these that you add to your DNS provider:
+
+| Type | Name | Value | Purpose |
+|------|------|-------|---------|
+| `MX` | `mail.mycompany.com` | `feedback-smtp.us-east-1.amazonses.com` | Receive email |
+| `TXT` | `mail.mycompany.com` | `v=spf1 include:amazonses.com ~all` | SPF authentication |
+| `CNAME` | `commune._domainkey.mail.mycompany.com` | `dkim.commune.email...` | DKIM signing |
+| `TXT` | `_dmarc.mail.mycompany.com` | `v=DMARC1; p=none; ...` | DMARC policy |
+
+<Note>
+  The exact records depend on your domain configuration and the email provider. Add all returned records exactly as shown.
+</Note>
+
+---
+
+## Verify domain
+
+After adding DNS records, trigger verification. DNS propagation typically takes 5–30 minutes.
+
+<CodeGroup>
+
+```typescript TypeScript
+const result = await commune.domains.verify('d_abc123');
+console.log(result); // { status: "verified" } or { status: "pending", ... }
+```
+
+```python Python
+result = client.domains.verify("d_abc123")
+print(result.status)
+```
+
+```bash MCP
+verify_domain(domain_id="d_abc123")
+```
+
+```bash cURL
+curl -X POST "https://api.commune.email/v1/domains/d_abc123/verify" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Domain statuses
+
+| Status | Description |
+|--------|-------------|
+| `pending` | DNS records not yet verified |
+| `verified` | All DNS records confirmed — domain is ready to use |
+| `failed` | Verification failed — check DNS records |
+
+---
+
+## List domains
+
+<CodeGroup>
+
+```typescript TypeScript
+const domains = await commune.domains.list();
+```
+
+```python Python
+domains = client.domains.list()
+```
+
+```bash MCP
+list_domains()
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/domains" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+---
+
+## Get domain details
+
+<CodeGroup>
+
+```typescript TypeScript
+const domain = await commune.domains.get('d_abc123');
+```
+
+```python Python
+domain = client.domains.get("d_abc123")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/domains/d_abc123" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+---
+
+## Domain setup guide
+
+### Step 1: Create the domain
+
+```bash
+curl -X POST https://api.commune.email/v1/domains \
+  -H "Authorization: Bearer comm_..." \
+  -d '{"name": "mail.mycompany.com"}'
+```
+
+### Step 2: Add DNS records
+
+Get the records from the API and add them at your DNS provider (Cloudflare, Route53, GoDaddy, etc.):
+
+```bash
+curl "https://api.commune.email/v1/domains/DOMAIN_ID/records" \
+  -H "Authorization: Bearer comm_..."
+```
+
+### Step 3: Wait for DNS propagation
+
+DNS changes typically take 5–30 minutes to propagate. Some providers may take up to 48 hours.
+
+### Step 4: Verify
+
+```bash
+curl -X POST "https://api.commune.email/v1/domains/DOMAIN_ID/verify" \
+  -H "Authorization: Bearer comm_..."
+```
+
+### Step 5: Create inboxes on your domain
+
+```bash
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -d '{"local_part": "support", "domain_id": "DOMAIN_ID"}'
+```
+
+## Domain limits
+
+| Tier | Custom domains |
+|------|---------------|
+| Free | 0 (shared domain only) |
+| Pro | 3 |
+| Business | 10 |
+| Enterprise | Unlimited |
+
+## Domain object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Unique domain ID |
+| `name` | `string` | Domain name |
+| `status` | `string` | `pending`, `verified`, or `failed` |
+| `region` | `string \| null` | AWS region |
+| `records` | `array` | DNS records for verification |
+| `createdAt` | `string` | ISO creation timestamp |
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Create email addresses on your verified custom domain.
+</Card>
+
+<Card title="Email Authentication" icon="fingerprint" href="/security/email-authentication">
+  Understand DKIM, SPF, and DMARC authentication in detail.
+</Card>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track delivery rates and sender reputation per domain.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full picture of Commune's inbound and outbound security layers.
+</Card>
+
+</Columns>

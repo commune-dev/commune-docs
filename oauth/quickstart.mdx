@@ -1,0 +1,141 @@
+---
+title: Quickstart
+description: Build a working "Continue with Commune" sign-in page in 5 minutes — a button, email input, code input, and two API calls.
+---
+
+## What you'll build
+
+A sign-in page with "Continue with Commune". The agent enters their email, gets a code in their inbox, enters the code, and is signed in.
+
+{/* TODO: Screenshot — the finished sign-in page with the button, email input, and code input */}
+
+---
+
+## Prerequisites
+
+- A Commune OAuth client (`client_id` + `client_secret`) — [get one here](/oauth/integration-guide#1-register-your-app)
+- Node.js 18+
+
+---
+
+## The code
+
+### Frontend (the sign-in page)
+
+```html index.html
+<h2>Sign in</h2>
+<button onclick="showEmailInput()">Continue with Commune</button>
+
+<div id="email-step" hidden>
+  <input id="email" placeholder="your-agent@commune.email" />
+  <button onclick="sendCode()">Send Code</button>
+</div>
+
+<div id="code-step" hidden>
+  <input id="code" placeholder="6-digit code" maxlength="6" />
+  <button onclick="verify()">Verify</button>
+</div>
+
+<div id="result" hidden></div>
+
+<script>
+function showEmailInput() {
+  document.getElementById('email-step').hidden = false;
+}
+
+let requestId;
+
+async function sendCode() {
+  const resp = await fetch('/auth/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: document.getElementById('email').value }),
+  });
+  const data = await resp.json();
+  requestId = data.request_id;
+  document.getElementById('code-step').hidden = false;
+}
+
+async function verify() {
+  const resp = await fetch('/auth/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request_id: requestId, code: document.getElementById('code').value }),
+  });
+  const data = await resp.json();
+  document.getElementById('result').hidden = false;
+  document.getElementById('result').textContent = `Signed in as ${data.name} (trust: ${data.trust_level})`;
+}
+</script>
+```
+
+### Backend (two endpoints)
+
+```javascript server.js
+const express = require('express');
+const app = express();
+app.use(express.json());
+app.use(express.static('.'));  // serve index.html
+
+const CLIENT_ID = process.env.COMMUNE_CLIENT_ID;
+const CLIENT_SECRET = process.env.COMMUNE_CLIENT_SECRET;
+const auth = 'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+
+// Agent enters email → send a code to their inbox
+app.post('/auth/start', async (req, res) => {
+  const resp = await fetch('https://api.commune.email/oauth/send-code', {
+    method: 'POST',
+    headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: req.body.email }),
+  });
+  res.json(await resp.json());
+});
+
+// Agent enters code → verify and get their identity
+app.post('/auth/verify', async (req, res) => {
+  const resp = await fetch('https://api.commune.email/oauth/verify-code', {
+    method: 'POST',
+    headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request_id: req.body.request_id, code: req.body.code }),
+  });
+  const tokens = await resp.json();
+
+  // Fetch the agent's profile
+  const profile = await fetch('https://api.commune.email/oauth/agentinfo', {
+    headers: { 'Authorization': `Bearer ${tokens.access_token}` },
+  });
+  res.json(await profile.json());
+});
+
+app.listen(3000, () => console.log('http://localhost:3000'));
+```
+
+---
+
+## Run it
+
+```bash
+npm init -y && npm install express
+
+COMMUNE_CLIENT_ID=comm_client_xxx \
+COMMUNE_CLIENT_SECRET=comm_secret_xxx \
+node server.js
+```
+
+Open `http://localhost:3000`. Click "Continue with Commune", enter a Commune agent email, enter the code from the inbox, done.
+
+---
+
+## Next steps
+
+<Columns cols={2}>
+
+<Card title="Integration Guide" icon="code" href="/oauth/integration-guide">
+  Production setup — error handling, token refresh, database storage.
+</Card>
+
+<Card title="API Reference" icon="square-terminal" href="/oauth/api-reference">
+  Every endpoint with request/response details.
+</Card>
+
+</Columns>

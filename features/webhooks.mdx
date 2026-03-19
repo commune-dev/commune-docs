@@ -1,0 +1,349 @@
+---
+title: Webhooks
+description: Get notified when emails arrive. Commune POSTs parsed messages, extracted data, and security context to your endpoint.
+---
+
+Set a webhook URL on an inbox. When an email arrives, Commune parses it, runs security checks, extracts structured data (if configured), and POSTs the result to your endpoint.
+
+```
+Sender → Commune (parse, scan, extract) → POST to your webhook
+```
+
+## Setting up a webhook
+
+Configure the webhook when creating an inbox, or update an existing inbox:
+
+<CodeGroup>
+
+```typescript TypeScript
+// On inbox creation
+const inbox = await commune.inboxes.create({
+  domainId: 'domain_id',
+  localPart: 'support',
+  webhook: {
+    endpoint: 'https://your-server.com/webhook/email',
+    events: ['inbound'],
+  },
+});
+
+// On existing inbox
+await commune.inboxes.setWebhook('domain_id', 'inbox_id', {
+  endpoint: 'https://your-server.com/webhook/email',
+  events: ['inbound'],
+});
+```
+
+```python Python
+inbox = client.inboxes.create(
+    local_part="support",
+    webhook={"endpoint": "https://your-server.com/webhook/email"},
+)
+
+# Or update existing
+client.inboxes.set_webhook(
+    domain_id="domain_id",
+    inbox_id="inbox_id",
+    endpoint="https://your-server.com/webhook/email",
+)
+```
+
+```bash cURL
+curl -X PUT "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "endpoint": "https://your-server.com/webhook/email",
+      "events": ["inbound"]
+    }
+  }'
+```
+
+</CodeGroup>
+
+## Webhook payload
+
+When an email arrives, your endpoint receives this JSON payload:
+
+<Expandable title="Full webhook payload shape">
+
+```json
+{
+  "domainId": "d_abc123",
+  "inboxId": "inbox_xyz",
+  "inboxAddress": "support@yourdomain.com",
+  "event": { /* raw email event data */ },
+  "email": { /* raw parsed email */ },
+  "message": {
+    "message_id": "msg_8f3a2b1c",
+    "thread_id": "thread_abc123",
+    "direction": "inbound",
+    "channel": "email",
+    "content": "Hi, I need help with my order #12345.",
+    "content_html": "<p>Hi, I need help with my order #12345.</p>",
+    "participants": [
+      { "role": "sender", "identity": "customer@example.com" },
+      { "role": "to", "identity": "support@yourdomain.com" }
+    ],
+    "attachments": ["att_001"],
+    "created_at": "2026-02-14T10:30:00Z",
+    "metadata": {
+      "subject": "Help with order #12345",
+      "created_at": "2026-02-14T10:30:00Z",
+      "domain_id": "d_abc123",
+      "inbox_id": "inbox_xyz",
+      "inbox_address": "support@yourdomain.com",
+      "message_id": "<unique-smtp-id@mail.example.com>",
+      "in_reply_to": null,
+      "references": [],
+      "extracted_data": {
+        "order_number": "12345",
+        "intent": "support_request",
+        "urgency": "medium"
+      },
+      "spam_score": 1.2,
+      "spam_action": "accept",
+      "spam_flagged": false,
+      "prompt_injection_checked": true,
+      "prompt_injection_detected": false,
+      "prompt_injection_risk": "none",
+      "prompt_injection_score": 0.02
+    }
+  },
+  "extractedData": {
+    "order_number": "12345",
+    "intent": "support_request",
+    "urgency": "medium"
+  },
+  "attachments": [
+    {
+      "attachment_id": "att_001",
+      "filename": "screenshot.png",
+      "mime_type": "image/png",
+      "size": 45230
+    }
+  ],
+  "security": {
+    "spam": {
+      "checked": true,
+      "score": 1.2,
+      "action": "accept",
+      "flagged": false
+    },
+    "prompt_injection": {
+      "checked": true,
+      "detected": false,
+      "risk_level": "none",
+      "confidence": 0.98,
+      "summary": null
+    }
+  }
+}
+```
+
+</Expandable>
+
+### Payload fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `domainId` | `string` | Domain the email was received on |
+| `inboxId` | `string` | Inbox the email was delivered to |
+| `inboxAddress` | `string` | Full inbox email address |
+| `message` | `Message` | Full parsed [message object](/features/messages#message-object-fields) |
+| `extractedData` | `object \| null` | Structured data extracted by your schema |
+| `attachments` | `AttachmentMetadata[]` | Metadata for each attachment |
+| `security` | `object` | Spam and prompt injection analysis |
+
+## Handling webhooks
+
+<CodeGroup>
+
+```typescript TypeScript (Express)
+import express from 'express';
+import { CommuneClient } from 'commune-ai';
+
+const app = express();
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+app.post('/webhook/email', express.json(), async (req, res) => {
+  const { message, extractedData, security } = req.body;
+
+  // Check security
+  if (security?.spam?.flagged) {
+    console.log('Spam detected, ignoring');
+    return res.json({ ok: true });
+  }
+
+  if (security?.prompt_injection?.detected) {
+    console.log('Prompt injection detected, handling carefully');
+  }
+
+  // Process the message
+  const sender = message.participants.find(p => p.role === 'sender')?.identity;
+  console.log(`From: ${sender}`);
+  console.log(`Subject: ${message.metadata.subject}`);
+  console.log(`Extracted: ${JSON.stringify(extractedData)}`);
+
+  // Reply
+  await commune.messages.send({
+    to: sender,
+    subject: `Re: ${message.metadata.subject}`,
+    html: '<p>Thanks for reaching out! We will get back to you soon.</p>',
+    thread_id: message.thread_id,
+  });
+
+  res.json({ ok: true });
+});
+
+app.listen(3000);
+```
+
+```python Python (Flask)
+from flask import Flask, request
+from commune import CommuneClient
+
+app = Flask(__name__)
+client = CommuneClient(api_key="comm_...")
+
+@app.route("/webhook/email", methods=["POST"])
+def handle_email():
+    data = request.json
+    message = data["message"]
+    security = data.get("security", {})
+    extracted = data.get("extractedData", {})
+
+    # Check security
+    if security.get("spam", {}).get("flagged"):
+        return {"ok": True}
+
+    # Process
+    sender = next(
+        p["identity"] for p in message["participants"]
+        if p["role"] == "sender"
+    )
+
+    # Reply
+    client.messages.send(
+        to=sender,
+        subject=f"Re: {message['metadata']['subject']}",
+        html="<p>Thanks! We'll get back to you soon.</p>",
+        thread_id=message["thread_id"],
+    )
+
+    return {"ok": True}
+```
+
+</CodeGroup>
+
+## Delivery guarantees
+
+Commune implements reliable webhook delivery with automatic retries:
+
+- **Retry strategy**: Exponential backoff — retries at 30s, 2m, 10m, 30m, 1h, 2h, 4h
+- **Max attempts**: 8 (configurable)
+- **Timeout**: 30 seconds per attempt
+- **Success**: Any `2xx` response code
+- **Dead letter**: After max attempts, delivery is marked `dead`
+
+<Warning>
+  Dead deliveries are not retried automatically. Use the retry endpoint to replay them once your server is back online.
+</Warning>
+
+## Webhook delivery management
+
+### List deliveries
+
+```bash
+curl "https://api.commune.email/v1/webhooks/deliveries?inbox_id=INBOX_ID&status=dead" \
+  -H "Authorization: Bearer comm_..."
+```
+
+### Response
+
+```json
+{
+  "deliveries": [
+    {
+      "delivery_id": "del_abc123",
+      "inbox_id": "inbox_xyz",
+      "message_id": "msg_001",
+      "endpoint": "https://your-server.com/webhook",
+      "status": "delivered",
+      "attempt_count": 1,
+      "max_attempts": 8,
+      "created_at": "2026-02-14T10:30:00Z",
+      "delivered_at": "2026-02-14T10:30:01Z",
+      "delivery_latency_ms": 342
+    }
+  ],
+  "total": 1
+}
+```
+
+### Delivery statuses
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Queued, not yet attempted |
+| `delivered` | Successfully delivered (2xx response) |
+| `retrying` | Failed, scheduled for retry |
+| `dead` | Max attempts exhausted |
+
+### Retry a failed delivery
+
+```bash
+curl -X POST "https://api.commune.email/v1/webhooks/deliveries/del_abc123/retry" \
+  -H "Authorization: Bearer comm_..."
+```
+
+### Webhook health
+
+Get per-endpoint delivery statistics:
+
+```bash
+curl "https://api.commune.email/v1/webhooks/health" \
+  -H "Authorization: Bearer comm_..."
+```
+
+```json
+{
+  "endpoints": [
+    {
+      "endpoint": "https://your-server.com/webhook",
+      "success_rate": 0.98,
+      "avg_latency_ms": 245,
+      "last_success": "2026-02-14T10:30:01Z",
+      "last_failure": "2026-02-13T08:15:00Z"
+    }
+  ],
+  "totals": {
+    "delivered": 1247,
+    "failed": 3,
+    "dead": 1,
+    "pending": 0
+  }
+}
+```
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Automatically extract structured JSON from every inbound email.
+</Card>
+
+<Card title="Prompt Injection Detection" icon="robot" href="/security/prompt-injection">
+  Detect and handle adversarial email content targeting your agent.
+</Card>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Full reference for sending emails and handling replies.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Configure per-inbox webhooks and extraction schemas.
+</Card>
+
+</Columns>

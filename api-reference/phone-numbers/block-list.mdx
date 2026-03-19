@@ -1,0 +1,123 @@
+---
+title: "Manage Block List"
+api: "PUT /v1/phone-numbers/{id}/block-list"
+description: "Set the block list for a phone number. Numbers on this list are always denied, regardless of the allow list. Replaces the entire block list on each call."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+// Get current block list
+const pn = await commune.phoneNumbers.get('pn_01abc123');
+console.log(pn.blockList);
+
+// Add a number to the block list
+const updated = await commune.phoneNumbers.addToBlockList('pn_01abc123', {
+  number: '+15555550000',
+});
+
+// Remove a number from the block list
+await commune.phoneNumbers.removeFromBlockList('pn_01abc123', '+15555550000');
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+# Get current block list
+pn = client.phone_numbers.get("pn_01abc123")
+print(pn.block_list)
+
+# Add a number to the block list
+updated = client.phone_numbers.add_to_block_list("pn_01abc123", number="+15555550000")
+
+# Remove a number from the block list
+client.phone_numbers.remove_from_block_list("pn_01abc123", "+15555550000")
+```
+```bash MCP
+update_phone_number_block_list(
+  id="pn_01abc123",
+  numbers=["+15555550000"]
+)
+```
+```bash cURL
+curl -X PUT https://api.commune.email/v1/phone-numbers/pn_01abc123/block-list \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "numbers": ["+15555550000"]
+  }'
+```
+```bash CLI
+commune phone-numbers block-list pn_01abc123
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": {
+    "id": "pn_01abc123",
+    "number": "+18005550001",
+    "numberType": "tollfree",
+    "friendlyName": "Support Line",
+    "country": "US",
+    "capabilities": {
+      "sms": true,
+      "mms": true,
+      "voice": true
+    },
+    "status": "active",
+    "allowList": [],
+    "blockList": ["+15555550000"],
+    "creditCostPerMonth": 150,
+    "autoReply": null,
+    "createdAt": "2026-02-01T00:00:00.000Z",
+    "updatedAt": "2026-02-25T10:00:00.000Z"
+  }
+}
+```
+```json 400 Invalid Numbers
+{
+  "error": "Invalid E.164 numbers",
+  "invalid": ["not-a-number"]
+}
+```
+```json 404 Not Found
+{
+  "error": "Phone number not found"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The phone number ID. Format: `pn_...`
+</ParamField>
+
+## Body
+
+<ParamField body="numbers" type="string[]" required>
+  The complete block list as an array of E.164 phone numbers (e.g., `["+15555550000"]`). This **replaces** the entire current block list. To clear the block list, pass an empty array `[]`.
+
+  All numbers must be valid E.164 format.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  The updated phone number record with the new `blockList`. See [Get Phone Number](/api-reference/phone-numbers/get) for the full response schema.
+</ResponseField>
+
+<Note>
+**Block list behavior:**
+- Numbers on the block list are **always denied**, regardless of whether they also appear on the allow list.
+- **Block list wins over allow list** when a number is on both.
+- Blocked inbound messages are still stored with `delivery_status: "blocked"` for your audit trail, but your webhook is not fired and no credits are charged.
+
+This is separate from the **STOP/opt-out suppression system**. The block list is admin-controlled. The suppression list is populated by recipients replying STOP.
+</Note>

@@ -1,0 +1,307 @@
+---
+title: Attachments
+description: Upload files, attach them to outbound emails, and download inbound attachments via signed URLs.
+---
+
+Upload a file, get an attachment ID, and reference it when sending. Inbound attachments are scanned for threats and downloadable through temporary signed URLs.
+
+## Upload an attachment
+
+Upload a file for later use when sending emails. Files are sent as base64-encoded content.
+
+<CodeGroup>
+
+```typescript TypeScript
+import { readFileSync } from 'fs';
+
+const content = readFileSync('invoice.pdf').toString('base64');
+const upload = await commune.attachments.upload(
+  content,
+  'invoice.pdf',
+  'application/pdf'
+);
+
+console.log(upload.attachment_id); // Use this when sending
+console.log(upload.size);          // File size in bytes
+```
+
+```python Python
+import base64
+
+with open("invoice.pdf", "rb") as f:
+    content = base64.b64encode(f.read()).decode()
+
+upload = client.attachments.upload(
+    content=content,
+    filename="invoice.pdf",
+    mime_type="application/pdf",
+)
+
+print(upload.attachment_id)  # Use this when sending
+```
+
+```bash MCP
+upload_attachment(
+  content="JVBERi0xLjQK...",
+  filename="invoice.pdf",
+  mime_type="application/pdf"
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/attachments/upload \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "JVBERi0xLjQK...",
+    "filename": "invoice.pdf",
+    "mime_type": "application/pdf"
+  }'
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `content` | `string` | Yes | Base64-encoded file content |
+| `filename` | `string` | Yes | Original filename (e.g., `invoice.pdf`) |
+| `mime_type` | `string` | Yes | MIME type (e.g., `application/pdf`, `image/png`) |
+
+### Response
+
+```json
+{
+  "data": {
+    "attachment_id": "a1b2c3d4e5f6",
+    "filename": "invoice.pdf",
+    "mime_type": "application/pdf",
+    "size": 24576
+  }
+}
+```
+
+### Limits
+
+- **Max file size**: 10 MB per attachment (after base64 encoding)
+- **Max per email**: 40 MB total across all attachments
+- **Storage quota**: Varies by plan tier
+
+---
+
+## Send with attachments
+
+After uploading, reference the `attachment_id` in your send call:
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.messages.send({
+  to: 'customer@example.com',
+  subject: 'Your invoice',
+  html: '<p>Please find your invoice attached.</p>',
+  attachments: [upload.attachment_id],
+});
+```
+
+```python Python
+client.messages.send(
+    to="customer@example.com",
+    subject="Your invoice",
+    html="<p>Please find your invoice attached.</p>",
+    attachments=[upload.attachment_id],
+)
+```
+
+```bash MCP
+send_email(
+  to="customer@example.com",
+  subject="Your invoice",
+  html="<p>Please find your invoice attached.</p>",
+  attachments="a1b2c3d4e5f6"
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/messages/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "customer@example.com",
+    "subject": "Your invoice",
+    "html": "<p>Please find your invoice attached.</p>",
+    "attachments": ["a1b2c3d4e5f6"]
+  }'
+```
+
+</CodeGroup>
+
+Multiple attachments are supported — pass an array of IDs.
+
+---
+
+## Get attachment metadata
+
+Retrieve metadata for an attachment (from sent or received emails).
+
+<CodeGroup>
+
+```typescript TypeScript
+const attachment = await commune.attachments.get('attachment_id');
+console.log(attachment.filename);  // "screenshot.png"
+console.log(attachment.size);      // 45230
+```
+
+```python Python
+attachment = client.attachments.get("attachment_id")
+print(attachment.filename)
+print(attachment.size)
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/attachments/ATTACHMENT_ID" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "data": {
+    "attachment_id": "a1b2c3d4e5f6",
+    "message_id": "msg_8f3a2b1c",
+    "filename": "screenshot.png",
+    "mime_type": "image/png",
+    "size": 45230,
+    "source": "email",
+    "storage_type": "cloudinary"
+  }
+}
+```
+
+---
+
+## Get download URL
+
+Generate a temporary signed URL to download an attachment.
+
+<CodeGroup>
+
+```typescript TypeScript
+const urlInfo = await commune.attachments.get('attachment_id', {
+  url: true,
+  expiresIn: 3600, // 1 hour
+});
+console.log(urlInfo.url); // Signed download URL
+```
+
+```python Python
+url_info = client.attachments.url("attachment_id", expires_in=3600)
+print(url_info.url)
+```
+
+```bash MCP
+get_attachment_url(attachment_id="a1b2c3d4e5f6", expires_in=3600)
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/attachments/ATTACHMENT_ID/url?expires_in=3600" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `attachment_id` | `string` | Yes | Attachment ID (path parameter) |
+| `expires_in` | `number` | No | URL lifetime in seconds (default: 3600) |
+
+### Response
+
+```json
+{
+  "data": {
+    "url": "https://res.cloudinary.com/...",
+    "expires_in": 3600,
+    "filename": "screenshot.png",
+    "mime_type": "image/png",
+    "size": 45230
+  }
+}
+```
+
+---
+
+## Inbound attachments
+
+When emails arrive with attachments, they're automatically stored and included in the webhook payload:
+
+```json
+{
+  "message": {
+    "attachments": ["att_001", "att_002"]
+  },
+  "attachments": [
+    {
+      "attachment_id": "att_001",
+      "filename": "receipt.pdf",
+      "mime_type": "application/pdf",
+      "size": 18432
+    },
+    {
+      "attachment_id": "att_002",
+      "filename": "photo.jpg",
+      "mime_type": "image/jpeg",
+      "size": 234567
+    }
+  ]
+}
+```
+
+Your agent can then download each attachment using the `get_attachment_url` endpoint.
+
+## Attachment scanning
+
+All inbound attachments are automatically scanned for threats:
+
+- **ClamAV antivirus** (when configured) — checks against virus signature database
+- **Heuristic scanning** — detects suspicious file types, double extensions, and known threat hashes
+- **Quarantine** — flagged attachments are quarantined and not delivered to your webhook
+
+This happens transparently — your agent only receives safe attachments.
+
+## Storage types
+
+| Type | Description |
+|------|-------------|
+| `cloudinary` | Cloud storage with signed URLs (default for larger files) |
+| `database` | Stored directly in MongoDB (small files, base64 data URLs) |
+
+The storage type is chosen automatically based on file size and configuration. Your code doesn't need to handle the difference — the download URL endpoint works for both.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Send emails with attachments and full message reference.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Receive inbound attachments in your webhook payload.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Learn how attachments are scanned for malware before delivery.
+</Card>
+
+<Card title="Data Deletion" icon="trash" href="/features/data-deletion">
+  GDPR-compliant deletion of messages and attachments.
+</Card>
+
+</Columns>

@@ -1,0 +1,105 @@
+---
+title: Can I send email without a custom domain?
+description: Yes — Commune provides shared sending domains for testing and early development. Production use requires a custom domain for deliverability.
+---
+
+## Short answer
+
+Yes. Every Commune account gets access to a shared sending domain (`oncommune.email`) from the moment you sign up. No DNS setup. No verification step.
+
+This is designed for testing and early development — getting your integration working before you're ready to configure your own domain. It is not recommended for production sends.
+
+## What the shared domain gives you
+
+- **Immediate inbox and send capability.** Create an inbox and start sending within minutes of signing up.
+- **No DNS setup required.** SPF, DKIM, and DMARC are already configured on the shared domain.
+- **Same API surface.** Every SDK method, webhook, and API call works identically. Switching to a custom domain later requires no code changes.
+
+```typescript
+// Works immediately — no domain setup needed
+const inbox = await commune.inboxes.create({
+  domainId: 'shared', // uses oncommune.email
+  username: 'my-agent',
+});
+
+await commune.messages.send({
+  from: 'my-agent@oncommune.email',
+  to: 'recipient@example.com',
+  subject: 'Hello from my agent',
+  text: 'Testing the integration.',
+});
+```
+
+## What the shared domain does not give you
+
+**Shared reputation.** All tenants on `oncommune.email` share the same sender reputation. If another tenant sends spam, it affects your deliverability too. You have no control over this.
+
+**No branded From address.** Your emails go out as `something@oncommune.email`. You cannot send as `you@yourbrand.com` without a custom domain.
+
+**No warmup control.** Inbox warming works by gradually increasing send volume from a specific domain. On a shared domain, you cannot run a warmup — the domain's history belongs to everyone on it.
+
+**Lower inbox placement.** Receiving mail servers apply stricter scrutiny to shared sending domains. Shared domains are more likely to be filtered or land in spam for cold recipients.
+
+## When to switch to a custom domain
+
+Switch before any of the following:
+
+- You are ready to send to real users or customers
+- You need a branded From address (e.g. `alerts@yourcompany.com`)
+- You care about inbox placement and deliverability rates
+- You want to run a domain warmup before scaling send volume
+- You are sending to cold recipients who don't know your brand
+
+As a rule: shared domain for development, custom domain for production.
+
+## How to add a custom domain
+
+**Step 1 — Register the domain with Commune.**
+
+```typescript
+const domain = await commune.domains.create({
+  domain: 'mail.yourcompany.com',
+});
+
+console.log(domain.dnsRecords); // SPF, DKIM, DMARC records to add
+```
+
+**Step 2 — Add the DNS records** to your domain registrar or DNS provider. See the table below for the required record types.
+
+**Step 3 — Verify the domain.**
+
+```typescript
+await commune.domains.verify({ domainId: domain.id });
+```
+
+Verification checks that all DNS records are live and correctly configured. Once verified, you can create inboxes and send from `@yoursubdomain.com` immediately.
+
+For the full domain setup reference, see [Custom Domains](/features/domains).
+
+## DNS records required
+
+| Record type | Name | Value |
+|-------------|------|-------|
+| `TXT` | `@` or `mail.yourcompany.com` | `v=spf1 include:spf.commune.email ~all` |
+| `CNAME` | `commune._domainkey.mail.yourcompany.com` | `commune._domainkey.oncommune.email` |
+| `TXT` | `_dmarc.mail.yourcompany.com` | `v=DMARC1; p=quarantine; rua=mailto:dmarc@commune.email` |
+
+Exact values are returned by `commune.domains.create()` and shown in the Commune dashboard. Use the values from the API response — they are specific to your domain and account.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Custom Domains" icon="globe" href="/features/domains">
+  Full setup reference and dashboard walkthrough for adding your own sending domain.
+</Card>
+
+<Card title="Why Agent Emails Land in Spam" icon="newspaper" href="/blog/why-agent-emails-land-in-spam">
+  The deliverability factors that matter most for agent-generated email.
+</Card>
+
+<Card title="How to Warm Up a Domain" icon="book-open" href="/kb/how-to-warm-up-domain">
+  Step-by-step warmup guide for safely ramping send volume on a new domain.
+</Card>
+
+</Columns>

@@ -1,0 +1,158 @@
+---
+title: How do I handle email replies in my agent?
+description: Configure webhooks to receive inbound emails, resolve threads, and reply in the same conversation.
+---
+
+## How it works
+
+When someone replies to your agent's email, Commune:
+
+1. Receives the reply on your inbox address
+2. Resolves it to the correct conversation thread
+3. POSTs the full parsed email to your webhook endpoint
+4. Your agent processes and replies
+
+## Step 1: Set a webhook on your inbox
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.setWebhook(domainId, inboxId, {
+  endpoint: 'https://your-server.com/webhook/email',
+  events: ['inbound'],
+});
+```
+
+```python Python
+client.inboxes.set_webhook(
+    domain_id="DOMAIN_ID",
+    inbox_id=inbox.id,
+    endpoint="https://your-server.com/webhook/email",
+)
+```
+
+```bash cURL
+curl -X PUT https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "endpoint": "https://your-server.com/webhook/email",
+      "events": ["inbound"]
+    }
+  }'
+```
+
+</CodeGroup>
+
+## Step 2: Handle the webhook
+
+Every inbound email POSTs to your endpoint:
+
+```typescript
+app.post('/webhook/email', async (req, res) => {
+  const { message } = req.body;
+
+  // The thread_id connects this reply to the original conversation
+  const { thread_id, content, participants } = message;
+
+  // Find the sender
+  const sender = participants.find(p => p.role === 'sender')?.identity;
+
+  // Your agent logic
+  const reply = await myAgent.respond({
+    emailContent: content,
+    threadId: thread_id,
+  });
+
+  // Reply in the same thread
+  await commune.messages.send({
+    to: sender,
+    subject: `Re: ${message.metadata.subject}`,
+    html: reply,
+    thread_id: thread_id,  // ← this keeps it in the same thread
+  });
+
+  res.json({ ok: true });
+});
+```
+
+<Note>
+Always include `thread_id` when replying. This is what keeps the conversation correctly threaded for both your agent and the recipient's email client.
+</Note>
+
+## Step 3: Verify webhook signatures
+
+Commune signs every webhook with HMAC-SHA256. Verify before processing:
+
+```typescript
+import { createHmac } from 'crypto';
+
+app.post('/webhook/email', express.raw({ type: '*/*' }), async (req, res) => {
+  const signature = req.headers['x-commune-signature'] as string;
+  const timestamp = req.headers['x-commune-timestamp'] as string;
+  const body = req.body.toString();
+
+  const expected = createHmac('sha256', process.env.COMMUNE_WEBHOOK_SECRET!)
+    .update(`${timestamp}.${body}`)
+    .digest('hex');
+
+  if (signature !== `v1=${expected}`) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  const payload = JSON.parse(body);
+  // ... handle
+});
+```
+
+## How threading works
+
+Commune resolves replies to threads in this priority order:
+
+1. **Routing token** — a unique token embedded in the `Reply-To` header of your outbound email
+2. **RFC 5322 Message-ID** — standard email header threading
+3. **Subject line matching** — fallback for replies that strip headers
+
+You don't configure this. It's automatic.
+
+## Read conversation history
+
+Before generating a reply, your agent can read the full thread:
+
+```typescript
+const messages = await commune.threads.messages(thread_id);
+
+// Pass history to your LLM
+const context = messages.map(m => ({
+  role: m.direction === 'inbound' ? 'user' : 'assistant',
+  content: m.content,
+}));
+
+const reply = await openai.chat.completions.create({
+  model: 'gpt-4o',
+  messages: [
+    { role: 'system', content: 'You are a helpful support agent.' },
+    ...context,
+    { role: 'user', content: message.content },
+  ],
+});
+```
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Full webhook reference including payload schema and signature verification.
+</Card>
+
+<Card title="Threads" icon="comments" href="/features/threads">
+  Thread management API for reading conversation history and resolving message chains.
+</Card>
+
+<Card title="How to Add Email to a LangChain Agent" icon="newspaper" href="/blog/email-for-langchain-agents">
+  Complete tutorial covering multi-agent email patterns with LangChain.
+</Card>
+
+</Columns>

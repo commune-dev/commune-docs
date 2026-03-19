@@ -1,0 +1,198 @@
+---
+title: Authentication
+description: API keys, permissions, response format, and error codes for the Commune API.
+---
+
+## API keys
+
+Every request needs an API key. Keys are scoped to your organization and start with `comm_`.
+
+Create one in the [dashboard](https://commune.email/dashboard/api-keys). It's shown once, so copy it immediately.
+
+Pass it as a Bearer token:
+
+```bash
+Authorization: Bearer comm_your_api_key_here
+```
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({
+  apiKey: process.env.COMMUNE_API_KEY,
+});
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient(api_key="comm_...")
+# Or set the COMMUNE_API_KEY environment variable
+client = CommuneClient()  # reads from env automatically
+```
+
+```json MCP
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_..."
+      }
+    }
+  }
+}
+```
+
+```bash cURL
+curl https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+## Base URL
+
+```
+https://api.commune.email
+```
+
+<Note>
+  If you are migrating from older setups, you can still override the base URL via `COMMUNE_BASE_URL`.
+</Note>
+
+## Permissions
+
+API keys can be configured with granular permissions:
+
+| Permission | Description |
+|---|---|
+| `messages:read` | List and read messages, threads, delivery events |
+| `messages:write` | Send emails, manage thread metadata |
+| `inboxes:read` | List and read inboxes |
+| `inboxes:write` | Create, update, and delete inboxes |
+| `domains:read` | List and read domains, DNS records, DMARC reports |
+| `domains:write` | Create domains, trigger verification |
+| `attachments:read` | Read attachment metadata and download URLs |
+| `attachments:write` | Upload attachments |
+| `threads:read` | List threads, read thread metadata |
+| `threads:write` | Update thread status, tags, assignment |
+| `admin` | Full access to all resources |
+| `data:delete` | Create and confirm data deletion requests |
+
+## Key limits
+
+You can set per-key limits (max inboxes, max emails/day) independently from your plan's org-level limits.
+
+## Response format
+
+### Success
+
+```json
+{
+  "data": {
+    // ... response payload
+  }
+}
+```
+
+### Error
+
+```json
+{
+  "error": "Human-readable error message"
+}
+```
+
+### Pagination
+
+List endpoints use cursor-based pagination:
+
+```json
+{
+  "data": [ ... ],
+  "next_cursor": "eyJ0IjoiMjAyNi0wMi...",
+  "has_more": true
+}
+```
+
+Pass `next_cursor` as the `cursor` query parameter to fetch the next page.
+
+## Response codes
+
+| Code | Description |
+|------|-------------|
+| `200` | Success |
+| `201` | Created (new resource) |
+| `400` | Bad request — check parameters |
+| `401` | Missing or invalid API key |
+| `403` | Insufficient permissions or quota exceeded |
+| `404` | Resource not found |
+| `409` | Conflict (e.g., duplicate resource) |
+| `413` | Payload too large (attachment size limit) |
+| `429` | Rate limit exceeded |
+| `500` | Server error |
+
+## x402 wallet auth
+
+Don't want an API key? Your agent can pay per call with USDC instead. Create an [x402 client](https://docs.cdp.coinbase.com/x402/quickstart-for-buyers) with your own signer and pass it to the SDK. Every API call is paid via the [x402 protocol](https://x402.org).
+
+<CodeGroup>
+
+```typescript TypeScript
+// You create the x402 client with your own signer — we never see your key
+const x402 = new x402Client();
+registerExactEvmScheme(x402, { signer: privateKeyToAccount(process.env.WALLET_KEY) });
+const commune = new CommuneClient({ wallet: x402 });
+```
+
+```python Python
+from x402 import x402Client
+from x402.mechanisms.evm.exact import ExactEvmScheme
+from eth_account import Account
+
+x402 = x402Client()
+x402.register("eip155:*", ExactEvmScheme(signer=Account.from_key(os.environ["WALLET_KEY"])))
+client = CommuneClient(wallet=x402)
+```
+
+</CodeGroup>
+
+No signup, no subscription. Your wallet address becomes your org identity. See the [full x402 guide](/integrations/x402-payments) for setup, pricing, and networks.
+
+## Security best practices
+
+<Warning>
+  Never expose your API key in client-side code, public repositories, or browser JavaScript. Always use environment variables.
+</Warning>
+
+- Store API keys in environment variables (`COMMUNE_API_KEY`)
+- Use the minimum permissions necessary for each key
+- Rotate keys periodically through the dashboard
+- Set inbox and email limits on keys used by automated systems
+- Use separate keys for development and production
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Build a complete email agent in 5 minutes.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Create and manage email addresses for your agents.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Understand per-second and daily sending limits.
+</Card>
+
+<Card title="Agent Auth" icon="robot" href="/agents/agent-auth">
+  Autonomous Ed25519 authentication without human provisioning.
+</Card>
+
+</Columns>

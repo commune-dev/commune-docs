@@ -1,0 +1,202 @@
+---
+title: "Purchase Phone Number"
+api: "POST /v1/phone-numbers"
+description: "Purchase a phone number for your organization. Credits are deducted immediately, prorated for the remaining days in your billing cycle."
+---
+
+<Note>
+**US local numbers require A2P 10DLC registration** before sending to US recipients. Toll-free numbers do not require registration. If you attempt to purchase a US local number without an approved A2P campaign, you will receive a `403 us_local_a2p_required` error.
+</Note>
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const phoneNumber = await commune.phoneNumbers.purchase({
+  number: '+18005550001',
+  friendlyName: 'Support Line',
+});
+
+console.log(phoneNumber.id);      // pn_01abc123
+console.log(phoneNumber.number);  // +18005550001
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+phone_number = client.phone_numbers.purchase(
+    number="+18005550001",
+    friendly_name="Support Line",
+)
+
+print(phone_number.id)      # pn_01abc123
+print(phone_number.number)  # +18005550001
+```
+```bash MCP
+purchase_phone_number(
+  phone_number="+18005550001",
+  friendly_name="Support Line"
+)
+```
+```bash cURL
+curl -X POST https://api.commune.email/v1/phone-numbers \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number": "+18005550001",
+    "friendly_name": "Support Line"
+  }'
+```
+```bash CLI
+commune phone-numbers purchase --number "+18005550001" --name "Support Line"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 Created
+{
+  "data": {
+    "id": "pn_01abc123",
+    "number": "+18005550001",
+    "numberType": "tollfree",
+    "friendlyName": "Support Line",
+    "country": "US",
+    "capabilities": {
+      "sms": true,
+      "mms": true,
+      "voice": true
+    },
+    "status": "active",
+    "allowList": [],
+    "blockList": [],
+    "creditCostPerMonth": 150,
+    "autoReply": null,
+    "createdAt": "2026-02-25T10:00:00.000Z",
+    "updatedAt": "2026-02-25T10:00:00.000Z"
+  }
+}
+```
+```json 400 Bad Request
+{
+  "error": "Invalid request",
+  "details": {
+    "fieldErrors": {
+      "type": ["Invalid enum value. Expected 'local' | 'tollfree'"]
+    }
+  }
+}
+```
+```json 402 Insufficient Credits
+{
+  "error": "insufficient_phone_credits",
+  "message": "Purchasing a phone number costs 75 credits (prorated for 15 days remaining). Your balance is 50.",
+  "required": 75,
+  "balance": 50,
+  "buy_url": "/dashboard/billing"
+}
+```
+```json 403 A2P Required
+{
+  "error": "us_local_a2p_required",
+  "message": "US local numbers require A2P 10DLC campaign registration. Use toll-free numbers for now.",
+  "a2p_status": "none"
+}
+```
+```json 429 Cooldown Active
+{
+  "error": "release_cooldown_active",
+  "message": "You must wait 30 days after releasing a phone number before purchasing a new one."
+}
+```
+</ResponseExample>
+
+## Body
+
+<ParamField body="phone_number" type="string">
+  Specific E.164 phone number to purchase (e.g., `+18005550001`). Get available numbers from `GET /v1/phone-numbers/available`. If omitted, Commune picks the first available number matching your `country`, `area_code`, and `type` criteria.
+</ParamField>
+
+<ParamField body="country" type="string" default="US">
+  ISO-3166 alpha-2 country code. Used when `phone_number` is omitted to auto-select a number.
+</ParamField>
+
+<ParamField body="area_code" type="string">
+  Preferred area code for auto-selection (e.g., `415`). Only applies to `type=local`.
+</ParamField>
+
+<ParamField body="type" type="string" default="tollfree">
+  Number type. One of: `local`, `tollfree`. Toll-free numbers do not require A2P registration.
+</ParamField>
+
+<ParamField body="friendly_name" type="string">
+  Optional display name for this number (max 100 characters). Shown in your dashboard.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  The purchased phone number record.
+
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Unique phone number ID. Format: `pn_...`. Use this ID in all subsequent API calls.
+    </ResponseField>
+    <ResponseField name="number" type="string">
+      The phone number in E.164 format (e.g., `+18005550001`).
+    </ResponseField>
+    <ResponseField name="numberType" type="string">
+      One of: `local`, `tollfree`, `shortcode`.
+    </ResponseField>
+    <ResponseField name="friendlyName" type="string | null">
+      Display name for this number, if set.
+    </ResponseField>
+    <ResponseField name="country" type="string">
+      ISO-3166 country code (e.g., `US`).
+    </ResponseField>
+    <ResponseField name="capabilities" type="object">
+      <Expandable title="properties">
+        <ResponseField name="sms" type="boolean">SMS enabled.</ResponseField>
+        <ResponseField name="mms" type="boolean">MMS enabled.</ResponseField>
+        <ResponseField name="voice" type="boolean">Voice enabled.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Current status. One of: `active`, `released`, `suspended_non_payment`.
+    </ResponseField>
+    <ResponseField name="allowList" type="string[]">
+      E.164 numbers allowed to contact this number. Empty array means all numbers are allowed.
+    </ResponseField>
+    <ResponseField name="blockList" type="string[]">
+      E.164 numbers blocked from contacting this number. Block list always wins over allow list.
+    </ResponseField>
+    <ResponseField name="creditCostPerMonth" type="number">
+      Monthly credit cost for this number. Always 150 credits/month.
+    </ResponseField>
+    <ResponseField name="autoReply" type="object | null">
+      Auto-reply configuration, if configured.
+      <Expandable title="properties">
+        <ResponseField name="enabled" type="boolean">Whether auto-reply is active.</ResponseField>
+        <ResponseField name="body" type="string">The auto-reply message text.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+**Credit cost:** Phone numbers cost **150 credits/month** ($1.50), billed prorated for the remaining days in your billing cycle at purchase time. Monthly credits are deducted automatically on your billing reset date.
+</Note>
+
+<Note>
+**30-day purchase cooldown:** If you have released a phone number within the last 30 days, purchasing a new number is blocked until the cooldown expires.
+</Note>
+
+**Plan limits:**
+- Free: 1 phone number, 200 credits/month included
+- Agent Pro: 5 phone numbers, 500 credits/month included
+- Business: 25 phone numbers, 5,000 credits/month included
+- Enterprise: Unlimited phone numbers, unlimited credits

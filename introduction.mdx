@@ -1,0 +1,240 @@
+---
+title: Introduction
+description: Give your AI agent a real email address. Send, receive, extract data, and track deliverability through one API.
+---
+
+## Give your agent an email inbox
+
+Commune gives AI agents real email addresses. Your agent can send emails, receive replies, extract structured data from inbound messages, and track deliverability. Everything runs through a single API, SDKs for TypeScript and Python, or an MCP server for Claude/Cursor/Windsurf.
+
+## Quickstart
+
+Get your agent connected in minutes.
+
+<Columns cols={2}>
+
+<Card title="TypeScript" icon="js" href="/quickstart">
+  `npm install commune-ai`
+</Card>
+
+<Card title="Python" icon="python" href="/quickstart">
+  `pip install commune-mail`
+</Card>
+
+<Card title="MCP Server" icon="robot" href="/sdks/mcp">
+  Claude Desktop, Cursor, Windsurf
+</Card>
+
+<Card title="REST API" icon="webhook" href="/sdks/rest-api">
+  Any language via HTTP
+</Card>
+
+</Columns>
+
+## Source available
+
+The entire platform is on [GitHub](https://github.com/shanjairaj7/commune): backend API, SDKs, MCP server, and dashboard. Licensed under BSL 1.1 (converts to Apache 2.0 after 4 years). See the [contributing guide](/community/contributing) for details.
+
+## Ultra-quick start
+
+Send your first email in under 30 seconds.
+
+<CodeGroup>
+
+```bash npm
+npm install commune-ai
+```
+
+```bash pip
+pip install commune-mail
+```
+
+```bash MCP
+# Add to your Claude/Cursor/Windsurf config:
+# command: "uvx", args: ["commune-mcp"]
+```
+
+</CodeGroup>
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: 'comm_...' });
+
+// Create an inbox (domain auto-assigned)
+const inbox = await commune.inboxes.create({
+  localPart: 'support',
+});
+
+// Send an email
+await commune.messages.send({
+  to: 'user@example.com',
+  subject: 'Hello from my agent',
+  text: 'Your AI agent is now connected to email.',
+});
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient(api_key="comm_...")
+
+# Create an inbox
+inbox = client.inboxes.create(local_part="support")
+
+# Send an email
+client.messages.send(
+    to="user@example.com",
+    subject="Hello from my agent",
+    text="Your AI agent is now connected to email.",
+)
+```
+
+```bash cURL
+# Create an inbox
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"local_part": "support"}'
+
+# Send an email
+curl -X POST https://api.commune.email/v1/messages/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "user@example.com",
+    "subject": "Hello from my agent",
+    "text": "Your AI agent is now connected to email."
+  }'
+```
+
+</CodeGroup>
+
+That's it. Your agent now has an email address and can send messages.
+
+## What happens to every email
+
+Commune sits between your agent and the outside world. Every email passes through security, validation, and enrichment before it reaches the other side.
+
+### Outbound
+
+```
+Your Agent
+  │
+  ▼
+Commune API
+  │
+  ├─ Rate limiting (per-second + daily caps)
+  ├─ Burst detection (blocks abnormal spikes)
+  ├─ Content validation (outbound spam/phishing check)
+  ├─ Sending health gate (pauses if bounce/complaint rates are critical)
+  ├─ Warmup gate (gradual volume increase for new inboxes)
+  ├─ Email validation (MX records, syntax, disposable domain detection)
+  ├─ Suppression check (skips previously bounced/complained addresses)
+  ├─ Per-inbox + per-key daily limit enforcement
+  │
+  ▼
+DKIM-signed delivery ──→ Recipient's inbox
+  │
+  ▼
+Delivery tracking (sent → delivered / bounced / complained)
+  │
+  ▼
+Metrics + suppression list auto-updated
+```
+
+Rate-limited, validated, and checked against suppression lists before anything leaves. After delivery, Commune tracks the outcome: bounced addresses get suppressed, complaint rates are monitored, sending pauses if thresholds are breached.
+
+### Inbound
+
+```
+Sender's email
+  │
+  ▼
+Commune receives on your inbox address
+  │
+  ├─ Full email parsing (headers, body, HTML, plain text)
+  ├─ Thread resolution (routing token → DB lookup → SMTP headers → new thread)
+  ├─ Attachment extraction + storage
+  ├─ Attachment scanning (antivirus + heuristic threat detection)
+  ├─ Spam scoring (header analysis, content patterns, sender reputation)
+  ├─ Prompt injection detection (AI-targeted attack analysis)
+  ├─ Structured data extraction (your JSON schema → LLM → structured output)
+  ├─ Encryption at rest (AES-256-GCM for content + metadata)
+  │
+  ▼
+Stored in Commune (threads, messages, attachments, metadata)
+  │
+  ▼
+Webhook POST to your server
+  ├─ Full parsed message
+  ├─ Extracted structured data
+  ├─ Security context (spam score, prompt injection risk level)
+  ├─ Attachment metadata
+  │
+  ▼
+Your agent processes + replies (back through the outbound pipeline)
+```
+
+By the time an email reaches your webhook, it's been parsed, threaded, scanned for threats and prompt injection, scored for spam, and extracted against your schema. Your agent gets a clean payload ready to act on.
+
+## Core concepts
+
+<Columns cols={2}>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Each agent gets one or more inboxes. An inbox is an email address like `support@yourdomain.com` that can send and receive email.
+</Card>
+
+<Card title="Threads" icon="comments" href="/features/threads">
+  Related emails are automatically grouped into threads. Your agent can list threads, read messages, set status, add tags, and assign threads.
+</Card>
+
+<Card title="Domains" icon="globe" href="/features/domains">
+  Use Commune's shared domain to get started instantly, or add a custom domain with full DKIM/SPF/DMARC authentication.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Get notified instantly when emails arrive. Webhooks deliver the full parsed email, extracted data, and security context to your server.
+</Card>
+
+</Columns>
+
+## SDKs
+
+| | Install |
+|---|---|
+| TypeScript | `npm install commune-ai` |
+| Python | `pip install commune-mail` |
+| MCP (Claude, Cursor, Windsurf) | `uvx commune-mcp` |
+| REST API | Any HTTP client with a Bearer token |
+
+Every feature works through all four. The docs show examples for each.
+
+## Next steps
+
+<Columns cols={2}>
+
+<Card title="Get API Key" icon="key" href="https://commune.email/dashboard/api-keys">
+  Create your API key and start sending emails immediately.
+</Card>
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Build a complete email agent in 5 minutes — send, receive, extract data, and handle attachments.
+</Card>
+
+<Card title="Authentication" icon="key" href="/authentication">
+  Understand API authentication and security best practices.
+</Card>
+
+<Card title="SDKs" icon="code" href="/sdks/typescript">
+  Install and configure the SDK for your language.
+</Card>
+
+<Card title="Security" icon="shield" href="/security/overview">
+  Learn how Commune handles DKIM, encryption, spam prevention, and more.
+</Card>
+
+</Columns>

@@ -1,0 +1,273 @@
+---
+title: How do I comply with CAN-SPAM and GDPR for agent emails?
+description: Legal requirements for AI agent email — CAN-SPAM, GDPR, unsubscribe headers, consent management, and data deletion.
+---
+
+## The short answer
+
+AI agents are subject to the same email laws as human senders. CAN-SPAM requires a physical address, honest subject lines, and a working unsubscribe mechanism in every commercial email. GDPR requires lawful basis for processing, data minimization, and the right to deletion. Commune handles the infrastructure parts — unsubscribe headers, data deletion API, retention policies. You handle consent management and your privacy policy.
+
+## CAN-SPAM requirements
+
+The CAN-SPAM Act applies to any commercial email sent to US recipients. "Commercial" means any email whose primary purpose is advertising or promoting a product or service. This includes automated outreach from sales agents, marketing bots, and follow-up sequences.
+
+| Requirement | What it means | Who handles it |
+|-------------|---------------|----------------|
+| No false headers | `From`, `To`, `Reply-To` must be accurate | You (set correct sender identity) |
+| No deceptive subject lines | Subject must reflect email content | You (validate agent output) |
+| Identify as an ad | Commercial emails must be identifiable as advertising | You (include disclosure if applicable) |
+| Physical address | Include a valid postal address | You (include in email footer) |
+| Unsubscribe mechanism | Working opt-out that processes within 10 business days | Commune + You |
+| Honor opt-outs | Stop emailing within 10 business days of unsubscribe | You (check suppression list before sending) |
+
+Penalties are up to $51,744 per violation. Each email is a separate violation.
+
+### Adding your physical address
+
+Every commercial email your agent sends needs a physical mailing address in the footer. Build this into your email template:
+
+```typescript
+function buildFooter(orgAddress: string): string {
+  return `
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666;">
+      <p>${orgAddress}</p>
+      <p>
+        <a href="{{unsubscribe_url}}">Unsubscribe</a> |
+        <a href="https://yourcompany.com/privacy">Privacy Policy</a>
+      </p>
+    </div>
+  `;
+}
+```
+
+### Adding List-Unsubscribe headers
+
+RFC 8058 defines a one-click unsubscribe mechanism that email providers like Gmail and Yahoo now require for bulk senders. Commune automatically adds `List-Unsubscribe` and `List-Unsubscribe-Post` headers when you include unsubscribe configuration.
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.messages.send({
+  to: recipient,
+  subject: 'Your weekly product update',
+  html: emailHtml,
+  headers: {
+    'List-Unsubscribe': '<https://yourapp.com/unsubscribe?token=abc123>',
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  },
+});
+```
+
+```python Python
+client.messages.send(
+    to=recipient,
+    subject="Your weekly product update",
+    html=email_html,
+    headers={
+        "List-Unsubscribe": "<https://yourapp.com/unsubscribe?token=abc123>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+)
+```
+
+</CodeGroup>
+
+### Handling unsubscribe requests
+
+When someone clicks unsubscribe, you need to record it and prevent future sends. Build a suppression list and check it before every send.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Unsubscribe endpoint
+app.post('/unsubscribe', async (req, res) => {
+  const { token } = req.query;
+  const record = await db.unsubscribeTokens.findOne({ token });
+
+  if (!record) return res.status(404).send('Invalid token');
+
+  await db.suppressionList.insert({
+    email: record.email,
+    reason: 'unsubscribe',
+    unsubscribed_at: new Date(),
+  });
+
+  res.send('You have been unsubscribed.');
+});
+
+// Check before sending
+async function canSendTo(email: string): Promise<boolean> {
+  const suppressed = await db.suppressionList.findOne({ email });
+  return !suppressed;
+}
+
+async function agentSend(payload: SendEmailPayload): Promise<void> {
+  if (!(await canSendTo(payload.to))) {
+    console.log(`Skipping ${payload.to} — on suppression list`);
+    return;
+  }
+
+  await commune.messages.send(payload);
+}
+```
+
+```python Python
+# Unsubscribe endpoint
+@app.post("/unsubscribe")
+async def unsubscribe(token: str):
+    record = await db.unsubscribe_tokens.find_one({"token": token})
+    if not record:
+        raise HTTPException(status_code=404, detail="Invalid token")
+
+    await db.suppression_list.insert_one({
+        "email": record["email"],
+        "reason": "unsubscribe",
+        "unsubscribed_at": datetime.utcnow(),
+    })
+
+    return {"message": "You have been unsubscribed."}
+
+# Check before sending
+async def can_send_to(email: str) -> bool:
+    suppressed = await db.suppression_list.find_one({"email": email})
+    return suppressed is None
+
+async def agent_send(payload: dict) -> None:
+    if not await can_send_to(payload["to"]):
+        print(f"Skipping {payload['to']} — on suppression list")
+        return
+
+    client.messages.send(**payload)
+```
+
+</CodeGroup>
+
+<Note>
+Transactional emails (order confirmations, password resets, account notifications) are exempt from most CAN-SPAM requirements except the prohibition on false headers. If your agent sends both transactional and commercial emails, classify each message and apply rules accordingly.
+</Note>
+
+## GDPR requirements
+
+GDPR applies when you process personal data of EU/EEA residents. Email addresses are personal data. Email content often contains personal data. If your agent emails anyone in the EU, GDPR applies to you.
+
+### Lawful basis for processing
+
+You need a legal reason to send email. The two most relevant bases for agent email:
+
+| Basis | When it applies | What you need |
+|-------|----------------|---------------|
+| **Consent** | Marketing, outreach, newsletters | Explicit opt-in, documented, withdrawable |
+| **Legitimate interest** | Transactional, support replies, account notifications | Documented assessment, easy opt-out |
+
+Consent must be freely given, specific, informed, and unambiguous. A pre-checked box is not consent. An email address submitted in a form is not consent to receive marketing.
+
+### Data minimization
+
+Only collect and process the data your agent actually needs. If your agent doesn't need to store the email body after processing, don't store it.
+
+```typescript
+// Good: store only what you need
+await db.interactions.insert({
+  thread_id: message.thread_id,
+  direction: 'inbound',
+  summary: await summarize(message.content), // Store summary, not full body
+  processed_at: new Date(),
+});
+
+// Bad: store everything forever
+await db.interactions.insert({
+  ...message, // Full email body, headers, attachments, metadata
+  // No TTL, no deletion policy
+});
+```
+
+### Right to deletion
+
+GDPR gives individuals the right to have their personal data deleted. This includes email content, metadata, and any derived data (summaries, extracted entities).
+
+Commune provides a data deletion API to remove email data from Commune's systems:
+
+<CodeGroup>
+
+```typescript TypeScript
+// Delete all data for a specific email address
+await commune.data.delete({
+  email: 'user@example.com',
+});
+
+// Delete a specific thread
+await commune.threads.delete(threadId);
+```
+
+```python Python
+# Delete all data for a specific email address
+client.data.delete(email="user@example.com")
+
+# Delete a specific thread
+client.threads.delete(thread_id)
+```
+
+</CodeGroup>
+
+You also need to delete data from your own systems — your database, logs, backups, vector stores, and any downstream services that received the data.
+
+### Data retention policies
+
+Don't keep data longer than you need it. Set retention policies and enforce them with automated cleanup:
+
+```typescript
+// Monthly cleanup: delete emails older than retention period
+async function enforceRetention(): Promise<void> {
+  const RETENTION_DAYS = 90;
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+  // Delete from your database
+  const deleted = await db.emails.deleteMany({
+    created_at: { $lt: cutoff },
+  });
+
+  console.log(`Deleted ${deleted.deletedCount} emails older than ${RETENTION_DAYS} days`);
+}
+```
+
+## What Commune handles vs. what you handle
+
+| Responsibility | Commune | You |
+|---------------|---------|-----|
+| Email authentication (DKIM, SPF, DMARC) | Yes | - |
+| TLS encryption in transit | Yes | - |
+| Encryption at rest | Yes (Business+) | - |
+| `List-Unsubscribe` header support | Yes | You set the URL |
+| Data deletion API | Yes | You trigger it + delete your own data |
+| Retention policy enforcement | Configurable | You configure the policy |
+| Consent management | - | Yes |
+| Suppression list | - | Yes |
+| Physical address in footer | - | Yes |
+| Privacy policy | - | Yes |
+| Data processing agreement (DPA) | Available on request | You sign it |
+
+## Getting a DPA
+
+If you're processing EU personal data through Commune, you need a Data Processing Agreement. Contact [support@commune.email](mailto:support@commune.email) to request one. Enterprise plans include a signed DPA by default.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Data Deletion" icon="trash" href="/features/data-deletion">
+  Full API reference for deleting email data from Commune.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-check" href="/security/spam-prevention">
+  How Commune prevents your agent from being flagged as a spammer.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Per-plan sending limits that help keep your sending within legal bounds.
+</Card>
+
+<Card title="Human-in-the-Loop Approval" icon="user-check" href="/knowledge-base/human-in-the-loop-approval">
+  Approval flows that ensure compliance-sensitive emails get human review.
+</Card>
+
+</Columns>

@@ -1,0 +1,106 @@
+---
+title: How do I give my AI agent an email address?
+description: Create an inbox with one API call. No domain setup required to start. Your agent has a real email address in under 30 seconds.
+---
+
+## The short answer
+
+Call `POST /v1/inboxes` with a `local_part`. Commune auto-assigns the `commune.email` shared domain. Your agent's email address is ready immediately.
+
+```bash
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"local_part": "support"}'
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "id": "inbox_abc123",
+    "localPart": "support",
+    "address": "support@commune.email"
+  }
+}
+```
+
+Your agent can now send and receive email at `support@commune.email`.
+
+## Using the SDK
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const inbox = await commune.inboxes.create({
+  localPart: 'support',
+});
+
+console.log(inbox.address); // support@commune.email
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient(api_key="comm_...")
+
+inbox = client.inboxes.create(local_part="support")
+print(inbox.address)  # support@commune.email
+```
+
+</CodeGroup>
+
+## Using a custom domain
+
+If you want `support@yourdomain.com` instead of `support@commune.email`:
+
+1. Add your domain in the dashboard or via API: `POST /v1/domains`
+2. Add the DNS records Commune gives you (DKIM, SPF, DMARC)
+3. Create the inbox with your domain ID:
+
+```typescript
+const inbox = await commune.inboxes.create({
+  localPart: 'support',
+  domainId: 'YOUR_DOMAIN_ID',
+});
+// → support@yourdomain.com
+```
+
+## One inbox per agent
+
+For multi-agent systems, create one inbox per agent or per campaign. This isolates sender reputation and routes replies back to the correct agent.
+
+```typescript
+// Support agent inbox
+const supportInbox = await commune.inboxes.create({ localPart: 'support' });
+
+// Outbound sales agent inbox
+const salesInbox = await commune.inboxes.create({ localPart: 'outreach' });
+
+// Each agent only reads from its own inbox
+```
+
+## What you get with each inbox
+
+- A real email address that can send and receive
+- DKIM signing on all outbound email
+- Domain warmup (ramps volume from 50 to 5,000/day)
+- Automatic suppression list
+- Bounce and complaint rate tracking
+- Webhook for inbound email
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Send Email" icon="paper-plane" href="/features/messages">
+    Send your first email from your new agent inbox.
+  </Card>
+  <Card title="Receive Email" icon="inbox" href="/features/webhooks">
+    Configure a webhook to receive inbound email.
+  </Card>
+</Columns>

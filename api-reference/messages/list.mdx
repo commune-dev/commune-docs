@@ -1,0 +1,254 @@
+---
+title: "List messages"
+api: "GET /v1/messages"
+description: "List messages filtered by inbox, domain, or sender identity."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const result = await commune.messages.list({
+  inboxId: 'inbox_abc123',
+  limit: 25,
+  direction: 'desc',
+});
+
+console.log(result.data.length);  // up to 25
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.messages.list(
+    inbox_id="inbox_abc123",
+    limit=25,
+    direction="desc",
+)
+
+print(len(result.data))
+```
+```bash MCP
+list_messages(
+  inbox_id="inbox_abc123",
+  limit=25
+)
+```
+```bash cURL
+curl "https://api.commune.email/v1/messages?inbox_id=inbox_abc123&limit=25&order=desc" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune messages list --inbox-id inbox_abc123 --limit 25
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "channel": "email",
+      "message_id": "49a3999c-0ce1-4ea6-ab68-e08a5c73e498",
+      "thread_id": "thread_f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "direction": "inbound",
+      "participants": [
+        { "role": "sender", "identity": "customer@example.com" },
+        { "role": "to", "identity": "support@mycompany.com" }
+      ],
+      "content": "Hi, I need help with my order.",
+      "content_html": "<p>Hi, I need help with my order.</p>",
+      "attachments": [],
+      "created_at": "2026-02-25T10:30:00.000Z",
+      "metadata": {
+        "created_at": "2026-02-25T10:30:00.000Z",
+        "subject": "Order help",
+        "inbox_id": "inbox_abc123",
+        "domain_id": "domain_xyz789",
+        "delivery_status": "delivered",
+        "has_attachments": false,
+        "attachment_count": 0,
+        "spam_checked": true,
+        "spam_score": 0.02,
+        "spam_action": "accept",
+        "spam_flagged": false,
+        "prompt_injection_checked": true,
+        "prompt_injection_detected": false,
+        "prompt_injection_risk": "none"
+      }
+    }
+  ]
+}
+```
+```json 400 Bad Request
+{
+  "error": "Provide at least one filter: sender, domain_id, or inbox_id"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Query Parameters
+
+<Note>
+At least one of `inbox_id`, `domain_id`, or `sender` is required. The endpoint returns a 400 error if none are provided.
+</Note>
+
+<ParamField query="inbox_id" type="string">
+  Filter messages to a specific inbox. Takes precedence over `domain_id` and `sender` when provided.
+</ParamField>
+
+<ParamField query="domain_id" type="string">
+  Filter messages to a specific domain. Used when `inbox_id` is not provided. Takes precedence over `sender`.
+</ParamField>
+
+<ParamField query="sender" type="string">
+  Filter messages by sender identity (email address). Used when neither `inbox_id` nor `domain_id` is provided.
+</ParamField>
+
+<ParamField query="limit" type="number" default="50">
+  Maximum number of results to return. Range: 1–1000.
+</ParamField>
+
+<ParamField query="order" type="string" default="desc">
+  Sort order by `created_at`. One of: `asc` (oldest first) or `desc` (newest first).
+</ParamField>
+
+<ParamField query="before" type="string">
+  ISO 8601 date string. Return only messages created before this timestamp. Example: `2026-02-25T00:00:00.000Z`.
+</ParamField>
+
+<ParamField query="after" type="string">
+  ISO 8601 date string. Return only messages created after this timestamp. Example: `2026-02-01T00:00:00.000Z`.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object[]">
+  Array of message objects.
+
+  <Expandable title="Message object properties" defaultOpen>
+    <ResponseField name="channel" type="string">
+      Always `"email"` for email messages.
+    </ResponseField>
+    <ResponseField name="message_id" type="string">
+      Unique message identifier.
+    </ResponseField>
+    <ResponseField name="thread_id" type="string">
+      Thread this message belongs to. Format: `thread_<uuid>`.
+    </ResponseField>
+    <ResponseField name="direction" type="string">
+      `"inbound"` for received messages, `"outbound"` for sent messages.
+    </ResponseField>
+    <ResponseField name="participants" type="object[]">
+      <Expandable title="Participant properties">
+        <ResponseField name="role" type="string">
+          One of: `sender`, `to`, `cc`, `bcc`, `mentioned`, `participant`.
+        </ResponseField>
+        <ResponseField name="identity" type="string">
+          Email address of this participant.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="content" type="string">
+      Plain text body of the message.
+    </ResponseField>
+    <ResponseField name="content_html" type="string | null">
+      HTML body of the message. `null` if no HTML body was present.
+    </ResponseField>
+    <ResponseField name="attachments" type="string[]">
+      Array of attachment IDs associated with this message.
+    </ResponseField>
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp when this message was created.
+    </ResponseField>
+    <ResponseField name="metadata" type="object">
+      <Expandable title="Metadata properties">
+        <ResponseField name="subject" type="string">
+          Email subject line.
+        </ResponseField>
+        <ResponseField name="inbox_id" type="string | null">
+          ID of the inbox this message belongs to.
+        </ResponseField>
+        <ResponseField name="domain_id" type="string | null">
+          ID of the domain this message belongs to.
+        </ResponseField>
+        <ResponseField name="inbox_address" type="string | null">
+          Full email address of the inbox (e.g. `support@mycompany.com`).
+        </ResponseField>
+        <ResponseField name="in_reply_to" type="string | null">
+          RFC 5322 `In-Reply-To` header value. Present on replies.
+        </ResponseField>
+        <ResponseField name="references" type="string[]">
+          RFC 5322 `References` header values for thread chaining.
+        </ResponseField>
+        <ResponseField name="delivery_status" type="string">
+          Current delivery status. One of: `sent`, `delivered`, `bounced`, `failed`, `complained`, `suppressed`, `blocked`, `credit_limit`.
+        </ResponseField>
+        <ResponseField name="delivery_data" type="object">
+          <Expandable title="Delivery data properties">
+            <ResponseField name="sent_at" type="string">ISO 8601 timestamp when the message was sent.</ResponseField>
+            <ResponseField name="delivered_at" type="string">ISO 8601 timestamp when delivery was confirmed.</ResponseField>
+            <ResponseField name="bounced_at" type="string">ISO 8601 timestamp of bounce event.</ResponseField>
+            <ResponseField name="bounce_reason" type="string">Human-readable bounce reason from the receiving server.</ResponseField>
+            <ResponseField name="bounce_type" type="string">One of: `hard`, `soft`.</ResponseField>
+            <ResponseField name="failed_at" type="string">ISO 8601 timestamp of failure event.</ResponseField>
+            <ResponseField name="failure_reason" type="string">Reason for delivery failure.</ResponseField>
+          </Expandable>
+        </ResponseField>
+        <ResponseField name="has_attachments" type="boolean">
+          `true` if this message has one or more attachments.
+        </ResponseField>
+        <ResponseField name="attachment_count" type="number">
+          Number of attachments on this message.
+        </ResponseField>
+        <ResponseField name="attachment_ids" type="string[]">
+          IDs of attachments linked to this message.
+        </ResponseField>
+        <ResponseField name="spam_checked" type="boolean">
+          Whether spam analysis was performed on this message.
+        </ResponseField>
+        <ResponseField name="spam_score" type="number">
+          Spam probability score between 0.0 (clean) and 1.0 (spam).
+        </ResponseField>
+        <ResponseField name="spam_action" type="string">
+          Action taken based on spam analysis. One of: `accept`, `flag`, `reject`.
+        </ResponseField>
+        <ResponseField name="spam_flagged" type="boolean">
+          `true` if the message was flagged as spam.
+        </ResponseField>
+        <ResponseField name="spam_reasons" type="string[]">
+          List of reasons the message was flagged, if applicable.
+        </ResponseField>
+        <ResponseField name="prompt_injection_checked" type="boolean">
+          Whether prompt injection analysis was performed.
+        </ResponseField>
+        <ResponseField name="prompt_injection_detected" type="boolean">
+          `true` if a prompt injection attempt was detected in the message body.
+        </ResponseField>
+        <ResponseField name="prompt_injection_risk" type="string">
+          Risk level of detected prompt injection. One of: `none`, `low`, `medium`, `high`, `critical`.
+        </ResponseField>
+        <ResponseField name="prompt_injection_score" type="number">
+          Rule-based prompt injection score between 0.0 and 1.0.
+        </ResponseField>
+        <ResponseField name="prompt_injection_signals" type="string">
+          Comma-separated list of rule signals that triggered the score.
+        </ResponseField>
+        <ResponseField name="extracted_data" type="object">
+          Structured data extracted from the message body when an extraction schema is configured on the inbox. Keys and value types are defined by your schema.
+
+          <Note>Structured extraction requires the **Business** plan or higher.</Note>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>

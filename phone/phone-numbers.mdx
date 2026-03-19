@@ -1,0 +1,558 @@
+---
+title: "Phone Numbers"
+description: "Give your agents a real phone number — with SMS, MMS, and voice capabilities built in."
+---
+
+A phone number is the foundation of your agent's SMS and voice communication. Just as an inbox gives your agent an email identity, a phone number gives it a programmable telephone identity — something it can send messages from, receive replies to, and build persistent conversation threads with.
+
+## What phone numbers enable
+
+- **A persistent identity** — recipients see a consistent number, not a random sender
+- **Inbound SMS routing** — messages arrive at a webhook your agent controls
+- **Two-way conversations** — full thread history between your agent and any contact
+- **MMS support** — send and receive images, documents, and media
+- **Allow lists** — restrict inbound to known numbers only (your own systems, trusted contacts)
+- **Block lists** — silently reject specific senders at the carrier level
+- **Auto-reply** — automatic acknowledgment sent to every inbound message
+- **Compliance-safe messaging** — STOP/UNSTOP handling built in, suppression lists managed automatically
+- **Webhook signing** — HMAC-SHA256 signatures on every event so you can verify the source
+
+## How it works
+
+When you purchase a phone number, Commune provisions it through Twilio on your behalf. The number is tied to your organization and enrolled in a Messaging Service with sticky sender enabled — the first message you send to a contact locks that number as the sender for that contact going forward, building a consistent identity.
+
+You never deal with Twilio directly. Commune handles provisioning, routing, webhooks, and credits.
+
+## Number types
+
+| Type | Best for | Notes |
+|------|----------|-------|
+| **Local** | 1:1 agent conversations, area-code matching | Requires <Tooltip tip="Application-to-Person 10-Digit Long Code — the US carrier registration requirement for programmatic SMS from local numbers">A2P 10DLC</Tooltip> campaign approval for US numbers |
+| **Toll-free** | High-volume messaging, customer support | No A2P requirement for US. Ready to send immediately |
+
+<Note>
+US local numbers require <Tooltip tip="Application-to-Person 10-Digit Long Code — the US carrier registration requirement for programmatic SMS from local numbers">A2P 10DLC</Tooltip> registration before they can send messages. See [A2P 10DLC](#a2p-10dlc) below. Toll-free numbers do not have this requirement and are ready to send immediately.
+</Note>
+
+## Capabilities
+
+Each number has specific capabilities depending on what you purchase:
+
+| Capability | Description |
+|-----------|-------------|
+| `sms` | Send and receive standard SMS (up to 160 chars per segment) |
+| `mms` | Send and receive media messages (images, videos, documents, PDFs) |
+| `voice` | Make and receive AI voice calls |
+
+<Note>
+Voice capability requires Agent Pro plan or higher. Check `capabilities` on the number object before using it for a specific purpose.
+</Note>
+
+## Agent use cases
+
+**Outbound sales agent** — Each agent gets its own number. Sticky sender ensures the contact always sees the same number. Replies route back to that agent's webhook.
+
+**Customer support** — One number per product line or region. Agents handle inbound replies and escalate when needed. Auto-reply handles out-of-hours coverage.
+
+**Appointment reminders** — Agents send reminders and handle confirmations via SMS reply. Allow list restricts inbound to known patient/customer numbers.
+
+**Notification system** — Numbers send alerts, confirmations, and one-way updates. Block list rejects spam inbound. Allow list restricts to your own systems.
+
+**Multi-tenant platforms** — Each customer or campaign gets its own number for isolated reputation, clear attribution, and independent block/allow lists.
+
+---
+
+## The phone number object
+
+```json
+{
+  "id": "pn_01abc123",
+  "number": "+14155550001",
+  "numberType": "local",
+  "friendlyName": "Support Line",
+  "country": "US",
+  "capabilities": {
+    "sms": true,
+    "mms": true,
+    "voice": false
+  },
+  "status": "active",
+  "allowList": [],
+  "blockList": [],
+  "autoReply": {
+    "enabled": false,
+    "body": null
+  },
+  "webhook": {
+    "endpoint": "https://your-server.com/webhooks/sms",
+    "secret": "whsec_...",
+    "events": ["sms.received", "sms.sent"]
+  },
+  "creditCostPerMonth": 150,
+  "createdAt": "2024-01-15T12:00:00Z",
+  "updatedAt": "2024-01-15T12:00:00Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique phone number ID |
+| `number` | string | <Tooltip tip="E.164 is the international phone number format: + followed by country code and number, no spaces or dashes">E.164</Tooltip>-formatted number (e.g. `+14155550001`) |
+| `numberType` | string | `local` or `tollfree` |
+| `friendlyName` | string | Human-readable label for your own reference |
+| `country` | string | ISO two-letter country code |
+| `capabilities.sms` | boolean | Can send/receive SMS |
+| `capabilities.mms` | boolean | Can send/receive MMS with media |
+| `capabilities.voice` | boolean | Can make/receive AI voice calls |
+| `status` | string | `active`, `released`, or `suspended_non_payment` |
+| `allowList` | string[] | If non-empty, only these E.164 numbers can reach you |
+| `blockList` | string[] | These numbers are always rejected (wins over allow list) |
+| `autoReply.enabled` | boolean | Whether to auto-reply to all inbound messages |
+| `autoReply.body` | string | The auto-reply text (max 1600 chars) |
+| `webhook.endpoint` | string | URL to receive inbound SMS/MMS events |
+| `webhook.secret` | string | Secret for HMAC-SHA256 webhook signature verification |
+| `webhook.events` | string[] | Events to receive: `sms.received`, `sms.sent` |
+| `creditCostPerMonth` | number | Monthly rental cost in credits |
+
+---
+
+## Search available numbers
+
+Before purchasing, search for numbers matching your criteria.
+
+<CodeGroup>
+
+```typescript TypeScript
+const available = await commune.phoneNumbers.search({
+  country: 'US',
+  type: 'local',
+  areaCode: '415',
+  capabilities: { sms: true, mms: true },
+  limit: 10,
+});
+
+available.forEach(n => {
+  console.log(n.number, n.creditCostPerMonth);
+});
+```
+
+```python Python
+available = client.phone_numbers.search(
+    country="US",
+    type="local",
+    area_code="415",
+    capabilities={"sms": True, "mms": True},
+    limit=10,
+)
+
+for n in available:
+    print(n.number, n.credit_cost_per_month)
+```
+
+```bash MCP
+search_phone_numbers(
+  country="US",
+  type="local",
+  area_code="415"
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/phone-numbers/available \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "country": "US",
+    "type": "local",
+    "area_code": "415",
+    "capabilities": { "sms": true, "mms": true },
+    "limit": 10
+  }'
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `country` | string | Yes | ISO country code (`US`, `GB`, `CA`, etc.) |
+| `type` | string | No | `local` or `tollfree` (default `tollfree`) |
+| `area_code` | string | No | Area code to search within (US only) |
+| `capabilities` | object | No | Filter by required capabilities: `{ sms, mms, voice }` |
+| `contains` | string | No | Substring to match within the number digits |
+| `in_region` | string | No | Region/state to search within (e.g. `CA` for California) |
+| `limit` | number | No | Max results (default 20, max 50) |
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "number": "+14155550001",
+      "numberType": "local",
+      "country": "US",
+      "capabilities": { "sms": true, "mms": true, "voice": true },
+      "creditCostPerMonth": 150
+    }
+  ]
+}
+```
+
+---
+
+## Purchase a phone number
+
+<CodeGroup>
+
+```typescript TypeScript
+const phoneNumber = await commune.phoneNumbers.purchase({
+  number: '+14155550001',
+  friendlyName: 'Support Line',
+});
+
+console.log(phoneNumber.id);     // pn_01abc123
+console.log(phoneNumber.status); // active
+```
+
+```python Python
+phone_number = client.phone_numbers.purchase(
+    number="+14155550001",
+    friendly_name="Support Line",
+)
+
+print(phone_number.id)     # pn_01abc123
+print(phone_number.status) # active
+```
+
+```bash MCP
+purchase_phone_number(number="+14155550001", friendly_name="Support Line")
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/phone-numbers \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number": "+14155550001",
+    "friendly_name": "Support Line",
+    "country": "US",
+    "type": "tollfree"
+  }'
+```
+
+</CodeGroup>
+
+Returns the full phone number object with `status: "active"`.
+
+<Note>
+**Prorated billing** — credits are charged immediately, prorated based on days remaining in your billing cycle. If you purchase mid-cycle with 15 days left, you pay 75 credits (half of 150). The full 150 credits are charged at the start of each subsequent month.
+</Note>
+
+<Warning>
+**30-day cooldown** — releasing a number starts a 30-day window during which you cannot purchase a new phone number for your organization. Plan releases carefully.
+</Warning>
+
+### A2P 10DLC
+
+US local numbers require A2P (Application-to-Person) 10DLC campaign registration before they can send messages. This is a US carrier requirement for all business SMS.
+
+Attempting to purchase a US local number without approved A2P status returns:
+
+```json
+{
+  "error": "us_local_a2p_required",
+  "message": "US local numbers require A2P 10DLC campaign approval."
+}
+```
+
+**To avoid this requirement:** use toll-free numbers. They work immediately without A2P and support the same SMS/MMS capabilities for most use cases.
+
+---
+
+## List phone numbers
+
+<CodeGroup>
+
+```typescript TypeScript
+const numbers = await commune.phoneNumbers.list();
+numbers.forEach(n => console.log(n.id, n.number, n.status));
+```
+
+```python Python
+numbers = client.phone_numbers.list()
+for n in numbers:
+    print(n.id, n.number, n.status)
+```
+
+```bash MCP
+list_phone_numbers()
+```
+
+```bash cURL
+curl https://api.commune.email/v1/phone-numbers \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+Returns all active (non-released) numbers for your organization, sorted by creation date descending.
+
+---
+
+## Get a phone number
+
+<CodeGroup>
+
+```typescript TypeScript
+const number = await commune.phoneNumbers.get('pn_01abc123');
+console.log(number.allowList);
+console.log(number.webhook?.endpoint);
+```
+
+```python Python
+number = client.phone_numbers.get("pn_01abc123")
+print(number.allow_list)
+```
+
+```bash cURL
+curl https://api.commune.email/v1/phone-numbers/pn_01abc123 \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+---
+
+## Update a phone number
+
+Configure the display name, auto-reply, and webhook on an existing number.
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.phoneNumbers.update('pn_01abc123', {
+  friendlyName: 'Outbound Sales',
+  autoReply: {
+    enabled: true,
+    body: "Thanks for reaching out! An agent will reply shortly.",
+  },
+  webhook: {
+    url: 'https://your-server.com/webhooks/sms',
+    secret: 'whsec_your_secret_here',
+  },
+});
+```
+
+```python Python
+client.phone_numbers.update(
+    "pn_01abc123",
+    friendly_name="Outbound Sales",
+    auto_reply={
+        "enabled": True,
+        "body": "Thanks for reaching out! An agent will reply shortly.",
+    },
+    webhook={
+        "endpoint": "https://your-server.com/webhooks/sms",
+        "secret": "whsec_your_secret_here",
+    },
+)
+```
+
+```bash cURL
+curl -X PATCH https://api.commune.email/v1/phone-numbers/pn_01abc123 \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "friendly_name": "Outbound Sales",
+    "auto_reply": {
+      "enabled": true,
+      "body": "Thanks for reaching out! An agent will reply shortly."
+    },
+    "webhook": {
+      "endpoint": "https://your-server.com/webhooks/sms",
+      "secret": "whsec_your_secret_here",
+      "events": ["sms.received", "sms.sent"]
+    }
+  }'
+```
+
+</CodeGroup>
+
+### Updatable fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `friendly_name` | string | Label for your reference (max 100 chars) |
+| `auto_reply.enabled` | boolean | Send an automatic reply to every inbound message |
+| `auto_reply.body` | string | The auto-reply text (max 1600 chars) |
+| `webhook.endpoint` | string | URL to receive inbound SMS/MMS events |
+| `webhook.secret` | string | Used to sign webhook payloads with HMAC-SHA256 |
+| `webhook.events` | string[] | `sms.received`, `sms.sent`, or both |
+
+### Webhook signature verification
+
+When `webhook.secret` is set, Commune includes an `X-Commune-Signature` header on every delivery. Verify it to confirm the payload came from Commune:
+
+```typescript
+import { createHmac } from 'crypto';
+
+app.post('/webhooks/sms', express.raw({ type: 'application/json' }), (req, res) => {
+  const signature = req.headers['x-commune-signature'] as string;
+  const expected = createHmac('sha256', process.env.WEBHOOK_SECRET!)
+    .update(req.body)
+    .digest('hex');
+
+  if (signature !== expected) {
+    return res.status(403).json({ error: 'invalid_signature' });
+  }
+
+  const payload = JSON.parse(req.body.toString());
+  // handle payload...
+  res.json({ ok: true });
+});
+```
+
+---
+
+## Allow list
+
+Restrict inbound messages to a set of known numbers. When non-empty, any number not on the list is silently rejected. Useful for systems where your number only receives messages from your own infrastructure.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Restrict to known numbers
+await commune.phoneNumbers.setAllowList('pn_01abc123', [
+  '+14155559001',
+  '+14155559002',
+]);
+
+// Clear allow list (accept everyone)
+await commune.phoneNumbers.setAllowList('pn_01abc123', []);
+```
+
+```python Python
+client.phone_numbers.set_allow_list("pn_01abc123", [
+    "+14155559001",
+    "+14155559002",
+])
+
+# Clear the allow list
+client.phone_numbers.set_allow_list("pn_01abc123", [])
+```
+
+```bash cURL
+curl -X PUT https://api.commune.email/v1/phone-numbers/pn_01abc123/allow-list \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "numbers": ["+14155559001", "+14155559002"] }'
+```
+
+</CodeGroup>
+
+<Tip>
+Empty allow list (`[]`) means accept all inbound. Non-empty means only listed numbers can reach you.
+</Tip>
+
+---
+
+## Block list
+
+Block specific numbers from messaging your number. Blocked inbound messages are stored with `delivery_status: "blocked"` but your webhook is not fired and no auto-reply is sent.
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.phoneNumbers.setBlockList('pn_01abc123', [
+  '+14155550000',
+]);
+
+// Clear block list
+await commune.phoneNumbers.setBlockList('pn_01abc123', []);
+```
+
+```python Python
+client.phone_numbers.set_block_list("pn_01abc123", ["+14155550000"])
+
+# Clear block list
+client.phone_numbers.set_block_list("pn_01abc123", [])
+```
+
+```bash cURL
+curl -X PUT https://api.commune.email/v1/phone-numbers/pn_01abc123/block-list \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "numbers": ["+14155550000"] }'
+```
+
+</CodeGroup>
+
+<Note>
+Block list always wins over allow list. If a number appears on both, it is rejected.
+</Note>
+
+---
+
+## Phone-scoped API keys
+
+You can create API keys scoped to specific phone numbers. A scoped key can only send from — and receive webhooks for — the numbers in its scope. Useful for multi-tenant setups where each customer's agent should only access its own number.
+
+Create phone-scoped keys from [Dashboard → API Keys](https://commune.email/dashboard/api-keys). Requests using a scoped key to access other numbers return `403 phone_key_not_authorized`.
+
+---
+
+## Release a phone number
+
+Permanently return the number to the carrier pool. The number stops receiving messages immediately. All associated message history remains accessible in your account.
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.phoneNumbers.release('pn_01abc123');
+```
+
+```python Python
+client.phone_numbers.release("pn_01abc123")
+```
+
+```bash cURL
+curl -X DELETE https://api.commune.email/v1/phone-numbers/pn_01abc123 \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+<Warning>
+Releasing a number is permanent. You cannot reclaim the same number after release. A 30-day cooldown applies before you can purchase any new phone number for your organization.
+</Warning>
+
+---
+
+## Credit costs
+
+| Item | Credits |
+|------|---------|
+| Monthly rental (US/CA) | 150/month |
+| SMS outbound (US/CA, per segment) | 2 |
+| SMS inbound (US/CA, per segment) | 1 |
+| MMS outbound (US/CA) | 5 |
+| MMS inbound (US/CA) | 1 |
+
+International SMS costs vary by country. See the full [credits by country table](/phone/sms#credits-by-country).
+
+Credits are deducted from your balance. Check your balance at [Dashboard → Credits](https://commune.email/dashboard/credits) or via `GET /v1/credits`.
+
+---
+
+## Plan quotas
+
+| Plan | Max phone numbers | Monthly included credits |
+|------|-------------------|--------------------------|
+| Free | 1 | 200 |
+| Agent Pro | 5 | 500 |
+| Business | 25 | 5,000 |
+| Enterprise | Unlimited | Unlimited |
+
+Additional credits can be purchased as bundles (1,000 for $12, 5,000 for $55, 20,000 for $200).

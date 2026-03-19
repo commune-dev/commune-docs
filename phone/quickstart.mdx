@@ -1,0 +1,502 @@
+---
+title: "Phone & SMS Quickstart"
+description: "Buy a phone number and send your agent's first SMS in under 5 minutes. Covers custom agents (SDK), MCP (Smithery / Claude Desktop), and OpenClaw."
+---
+
+This guide covers three integration paths. Pick the one that fits how your agent is built.
+
+<CardGroup cols={3}>
+  <Card title="Custom Agent" icon="code" href="#custom-agent-sdk">
+    TypeScript or Python. Full programmatic control. Best for agents you build from scratch.
+  </Card>
+  <Card title="MCP (Claude / Smithery)" icon="robot" href="#mcp-smithery">
+    Works in Claude Desktop, Cursor, Windsurf, and any MCP-compatible host. Zero code required.
+  </Card>
+  <Card title="OpenClaw Skill" icon="bolt" href="#openclaw-skill">
+    Install the commune-sms skill with one command. Runs in OpenClaw agent environments.
+  </Card>
+</CardGroup>
+
+---
+
+## Custom Agent (SDK)
+
+Build a full send/receive agent with TypeScript or Python.
+
+<Steps>
+
+<Step title="Install the SDK">
+
+<CodeGroup>
+
+```bash TypeScript
+npm install commune-ai
+```
+
+```bash Python
+pip install commune-mail
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Initialize the client">
+
+Get your API key from the [dashboard](https://commune.email/dashboard/api-keys).
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({
+  apiKey: process.env.COMMUNE_API_KEY,
+});
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient(api_key="comm_...")
+# Or set COMMUNE_API_KEY env var and call CommuneClient()
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Search for available numbers">
+
+Find a phone number for your region.
+
+<CodeGroup>
+
+```typescript TypeScript
+const available = await commune.phoneNumbers.search({
+  country: 'US',
+  type: 'local',
+  areaCode: '415',
+  capabilities: { sms: true },
+});
+
+console.log(available[0].phoneNumber);  // +14155550001
+```
+
+```python Python
+available = client.phone_numbers.search(
+    country="US",
+    type="local",
+    area_code="415",
+    capabilities={"sms": True},
+)
+
+print(available[0].phone_number)  # +14155550001
+```
+
+```bash cURL
+curl -X GET "https://api.commune.email/v1/phone-numbers/available?country=US&type=local&area_code=415" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Purchase the number">
+
+Buying a number makes it active immediately and starts the billing cycle.
+
+<CodeGroup>
+
+```typescript TypeScript
+const phoneNumber = await commune.phoneNumbers.purchase({
+  number: '+14155550001',
+  friendlyName: 'Support Line',
+});
+
+console.log(phoneNumber.id);     // pn_01abc123
+console.log(phoneNumber.number); // +14155550001
+console.log(phoneNumber.status); // active
+```
+
+```python Python
+phone_number = client.phone_numbers.purchase(
+    number="+14155550001",
+    friendly_name="Support Line",
+)
+
+print(phone_number.id)     # pn_01abc123
+print(phone_number.status) # active
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/phone-numbers/purchase \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "number": "+14155550001",
+    "friendlyName": "Support Line"
+  }'
+```
+
+</CodeGroup>
+
+<Note>
+150 credits are charged immediately and monthly thereafter. Check your balance at [Dashboard → Credits](https://commune.email/dashboard/credits).
+</Note>
+
+</Step>
+
+<Step title="Send your first SMS">
+
+<CodeGroup>
+
+```typescript TypeScript
+const message = await commune.sms.send({
+  phone_number_id: phoneNumber.id,
+  to: '+14155559999',
+  body: 'Hello from your AI agent!',
+});
+
+console.log(message.message_id);      // sms_SM01abc123
+console.log(message.status);          // accepted
+console.log(message.credits_charged); // 2
+```
+
+```python Python
+message = client.sms.send(
+    phone_number_id=phone_number.id,
+    to="+14155559999",
+    body="Hello from your AI agent!",
+)
+
+print(message.message_id)
+print(message.status)          # accepted
+print(message.credits_charged) # 2
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/sms/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number_id": "pn_01abc123",
+    "to": "+14155559999",
+    "body": "Hello from your AI agent!"
+  }'
+```
+
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "data": {
+    "message_id": "sms_SM01abc123",
+    "thread_id": "c8e3eb60e7193b6f6052f5c4adc72e22",
+    "message_sid": "SM01abc123",
+    "status": "accepted",
+    "credits_charged": 2,
+    "segments": 1
+  }
+}
+```
+
+</Step>
+
+<Step title="Receive inbound SMS via webhook">
+
+Configure a webhook on your phone number so your agent is notified in real time.
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.phoneNumbers.update(phoneNumber.id, {
+  webhook: {
+    url: 'https://your-server.com/webhooks/sms',
+  },
+});
+```
+
+```python Python
+client.phone_numbers.update(
+    phone_number.id,
+    webhook={"url": "https://your-server.com/webhooks/sms"},
+)
+```
+
+```bash cURL
+curl -X PATCH https://api.commune.email/v1/phone-numbers/pn_01abc123 \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "url": "https://your-server.com/webhooks/sms"
+    }
+  }'
+```
+
+</CodeGroup>
+
+When an inbound SMS arrives, Commune POSTs to your webhook:
+
+```json
+{
+  "event": "sms.received",
+  "data": {
+    "message_id": "sms_SM01abc124",
+    "thread_id": "c8e3eb60e7193b6f6052f5c4adc72e22",
+    "direction": "inbound",
+    "content": "Yes, I'm interested. Tell me more.",
+    "metadata": {
+      "from_number": "+14155559999",
+      "to_number": "+14155550001",
+      "phone_number_id": "pn_01abc123"
+    }
+  }
+}
+```
+
+</Step>
+
+<Step title="Build a responding agent">
+
+A full inbound handler — reads the message, generates a reply, sends it back in the same thread:
+
+<CodeGroup>
+
+```typescript TypeScript
+import express from 'express';
+import { CommuneClient } from 'commune-ai';
+import Anthropic from '@anthropic-ai/sdk';
+
+const app = express();
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+const anthropic = new Anthropic();
+
+app.post('/webhooks/sms', express.json(), async (req, res) => {
+  const { data } = req.body;
+  if (data.direction !== 'inbound') return res.json({ ok: true });
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 160,
+    system: 'You are a helpful assistant. Reply concisely — this is an SMS.',
+    messages: [{ role: 'user', content: data.content }],
+  });
+
+  const replyText = response.content[0].type === 'text'
+    ? response.content[0].text : '';
+
+  await commune.sms.send({
+    phone_number_id: data.metadata.phone_number_id,
+    to: data.metadata.from_number,
+    body: replyText,
+    thread_id: data.thread_id,
+  });
+
+  res.json({ ok: true });
+});
+
+app.listen(3000);
+```
+
+```python Python
+from flask import Flask, request, jsonify
+from commune import CommuneClient
+import anthropic
+
+app = Flask(__name__)
+commune = CommuneClient()
+claude = anthropic.Anthropic()
+
+@app.route("/webhooks/sms", methods=["POST"])
+def handle_sms():
+    data = request.json["data"]
+    if data["direction"] != "inbound":
+        return jsonify(ok=True)
+
+    response = claude.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=160,
+        system="You are a helpful assistant. Reply concisely — this is an SMS.",
+        messages=[{"role": "user", "content": data["content"]}],
+    )
+
+    commune.sms.send(
+        phone_number_id=data["metadata"]["phone_number_id"],
+        to=data["metadata"]["from_number"],
+        body=response.content[0].text,
+        thread_id=data["thread_id"],
+    )
+
+    return jsonify(ok=True)
+```
+
+</CodeGroup>
+
+</Step>
+
+</Steps>
+
+---
+
+## MCP (Smithery / Claude Desktop)
+
+Use Commune Phone & SMS directly inside Claude Desktop, Cursor, Windsurf, or any MCP-compatible host — no code required.
+
+### Install via Smithery
+
+The fastest path. [Smithery](https://smithery.ai/server/@communedotemail/commune-mcp) handles installation and configuration automatically:
+
+```bash
+npx -y @smithery/cli install @communedotemail/commune-mcp --client claude
+```
+
+Smithery will prompt for your `COMMUNE_API_KEY` and write the MCP config automatically.
+
+### Manual MCP config
+
+To configure manually, add this to your host's config file:
+
+<CodeGroup>
+
+```json Claude Desktop
+// ~/Library/Application Support/Claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_your_key_here"
+      }
+    }
+  }
+}
+```
+
+```json Cursor / Windsurf
+// .cursor/mcp.json  or  .windsurf/mcp.json  (project root)
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_your_key_here"
+      }
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+<Note>
+`uvx` runs `commune-mcp` directly from PyPI with no global install required. If you'd rather install it permanently: `pip install commune-mcp`, then use `"command": "commune-mcp", "args": []`.
+</Note>
+
+### What you can ask Claude
+
+Once configured, Claude has full access to all Commune Phone & SMS tools:
+
+```
+"Buy me a US phone number in area code 415"
+"Send an SMS to +14155559999 saying 'Your appointment is tomorrow at 2pm'"
+"Show me all inbound messages on my number"
+"Set up a webhook on pn_01abc123 pointing to https://my-server.com/sms"
+"Check if +14155559999 has opted out"
+"Search my SMS history for conversations about the pricing demo"
+"Release phone number pn_01abc123"
+```
+
+---
+
+## OpenClaw Skill
+
+Install the `commune-sms` skill to give any OpenClaw agent full phone number and SMS capabilities.
+
+### Install
+
+```bash
+openclaw skills install commune-sms
+```
+
+Or install directly from the GitHub repo:
+
+```bash
+openclaw skills add shanjairaj7/commune --skill commune-sms
+```
+
+### Set your API key
+
+```bash
+export COMMUNE_API_KEY="comm_your_key_here"
+```
+
+Add to your shell profile (`~/.bashrc`, `~/.zshrc`) to persist across sessions.
+
+Alternatively, store a credentials file:
+
+```bash
+mkdir -p ~/.config/commune
+cat > ~/.config/commune/credentials.json << 'EOF'
+{
+  "api_key": "comm_your_key_here"
+}
+EOF
+chmod 600 ~/.config/commune/credentials.json
+```
+
+### Verify the install
+
+```bash
+openclaw run "Buy me a US phone number and send a test SMS to +14155559999"
+```
+
+### What the skill enables
+
+Once installed, your OpenClaw agent can:
+
+- Buy and release phone numbers across 38 countries
+- Send SMS and MMS outbound
+- Receive inbound SMS via webhook (real-time, no polling)
+- Reply to conversations in-thread with full context
+- Manage STOP / opt-out suppressions automatically
+- Search SMS history by semantic meaning
+- List and manage all owned numbers
+
+### Skill reference
+
+The full `SKILL_sms.md` is available on GitHub — paste it as system prompt context for any agent that needs complete phone/SMS access:
+
+```
+https://github.com/shanjairaj7/commune/blob/main/commune-skill/SKILL_sms.md
+```
+
+---
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Phone Numbers" icon="phone" href="/phone/phone-numbers">
+  Number types, capabilities, allow/block lists, and full API reference.
+</Card>
+
+<Card title="SMS" icon="message" href="/phone/sms">
+  MMS, conversation threads, delivery tracking, suppressions, and compliance.
+</Card>
+
+<Card title="Credits" icon="coins" href="/features/credits">
+  How credits work, SMS costs per segment, and how to top up.
+</Card>
+
+<Card title="Email Quickstart" icon="envelope" href="/quickstart">
+  Add email alongside SMS for full multi-channel agent communication.
+</Card>
+
+</Columns>

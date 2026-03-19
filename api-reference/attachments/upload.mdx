@@ -1,0 +1,133 @@
+---
+title: "Upload attachment"
+api: "POST /v1/attachments/upload"
+description: "Upload a file attachment to use when sending emails. Returns an attachment ID you pass to the send endpoint."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+import { readFileSync } from 'fs';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const fileBuffer = readFileSync('./contract.pdf');
+const base64Content = fileBuffer.toString('base64');
+
+const result = await commune.attachments.upload({
+  content: base64Content,
+  filename: 'contract.pdf',
+  mime_type: 'application/pdf',
+});
+
+console.log(result.data.attachment_id);  // use this when calling messages.send
+```
+```python Python
+from commune import CommuneClient
+import base64
+
+client = CommuneClient()
+
+with open("contract.pdf", "rb") as f:
+    content = base64.b64encode(f.read()).decode()
+
+result = client.attachments.upload(
+    content=content,
+    filename="contract.pdf",
+    mime_type="application/pdf",
+)
+
+print(result.data.attachment_id)
+```
+```bash MCP
+upload_attachment(
+  filename="contract.pdf",
+  mime_type="application/pdf",
+  content="<base64-encoded-content>"
+)
+```
+```bash cURL
+curl -X POST https://api.commune.email/v1/attachments/upload \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "<base64-encoded-content>",
+    "filename": "contract.pdf",
+    "mime_type": "application/pdf"
+  }'
+```
+```bash CLI
+commune attachments upload --file ./contract.pdf
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 Created
+{
+  "data": {
+    "attachment_id": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "filename": "contract.pdf",
+    "mime_type": "application/pdf",
+    "size": 204800
+  }
+}
+```
+```json 400 Bad Request
+{
+  "error": "Missing required fields: content, filename, mime_type"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+```json 413 Storage Limit Exceeded
+{
+  "error": "Attachment storage limit exceeded",
+  "used_mb": 95,
+  "limit_mb": 100,
+  "upgrade_url": "/dashboard/billing"
+}
+```
+</ResponseExample>
+
+## Body
+
+<ParamField body="content" type="string" required>
+  Base64-encoded file content. Decode the file to bytes, then encode to Base64 before sending.
+</ParamField>
+
+<ParamField body="filename" type="string" required>
+  Original filename of the attachment (e.g. `"invoice.pdf"`). This is the name shown to the email recipient.
+</ParamField>
+
+<ParamField body="mime_type" type="string" required>
+  MIME type of the file (e.g. `"application/pdf"`, `"image/png"`, `"text/csv"`).
+
+  Accepts either `mime_type` or `mimeType`.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="attachment_id" type="string">
+      Unique attachment identifier. Pass this as an element of the `attachments` array when calling [Send email](/api-reference/messages/send). Format: 32-character hex string.
+    </ResponseField>
+    <ResponseField name="filename" type="string">
+      Filename as stored.
+    </ResponseField>
+    <ResponseField name="mime_type" type="string">
+      MIME type as stored.
+    </ResponseField>
+    <ResponseField name="size" type="number">
+      File size in bytes.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Storage limits
+
+Attachments count against your organization's storage quota. When the quota is exceeded, the API returns a `413` error with details on current usage and your plan limit. Upgrade your plan from the [billing dashboard](/dashboard/billing) to increase your storage limit.

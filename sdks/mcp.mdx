@@ -1,0 +1,213 @@
+---
+title: MCP Server
+description: Connect AI agents (Claude, Cursor, Windsurf) to Commune via the Model Context Protocol.
+---
+
+The Commune MCP server lets AI agents manage email directly from Claude Desktop, Cursor, Windsurf, or any MCP-compatible client. Your agent gets access to all Commune features as callable tools — no code required.
+
+## Installation
+
+```bash
+pip install commune-mcp
+# or run directly with
+uvx commune-mcp
+```
+
+## Configuration
+
+Add the server to your AI client's MCP configuration:
+
+<CodeGroup>
+
+```json Claude Desktop
+// ~/Library/Application Support/Claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_..."
+      }
+    }
+  }
+}
+```
+
+```json Cursor
+// .cursor/mcp.json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_..."
+      }
+    }
+  }
+}
+```
+
+```json Windsurf
+// .windsurf/mcp.json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_..."
+      }
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+## Available tools
+
+Once configured, your AI agent can call these tools naturally in conversation:
+
+### Domain tools
+
+| Tool | Description |
+|------|-------------|
+| `list_domains` | List all email domains |
+| `create_domain(name, region?)` | Create a custom domain |
+| `verify_domain(domain_id)` | Trigger DNS verification |
+| `get_domain_records(domain_id)` | Get required DNS records |
+
+### Inbox tools
+
+| Tool | Description |
+|------|-------------|
+| `list_inboxes(domain_id?)` | List inboxes (all or per domain) |
+| `create_inbox(local_part, domain_id?, name?, display_name?, webhook_endpoint?)` | Create an inbox |
+| `delete_inbox(domain_id, inbox_id)` | Delete an inbox |
+| `set_extraction_schema(domain_id, inbox_id, name, schema, description?, enabled?)` | Configure structured extraction |
+| `remove_extraction_schema(domain_id, inbox_id)` | Remove structured extraction |
+
+### Thread tools
+
+| Tool | Description |
+|------|-------------|
+| `list_threads(inbox_id?, domain_id?, limit?, cursor?, order?)` | List conversation threads |
+| `get_thread_messages(thread_id, limit?, order?)` | Read all messages in a thread |
+| `search_threads(query, inbox_id?, domain_id?, limit?)` | Search threads by content |
+
+### Message tools
+
+| Tool | Description |
+|------|-------------|
+| `send_email(to, subject, html?, text?, thread_id?, inbox_id?, attachments?)` | Send an email |
+
+### Triage tools
+
+| Tool | Description |
+|------|-------------|
+| `get_thread_metadata(thread_id)` | Get thread status, tags, assignment |
+| `set_thread_status(thread_id, status)` | Set status: open, needs_reply, waiting, closed |
+| `tag_thread(thread_id, tags)` | Add comma-separated tags |
+| `untag_thread(thread_id, tags)` | Remove tags |
+| `assign_thread(thread_id, assigned_to?)` | Assign/unassign a thread |
+
+### Attachment tools
+
+| Tool | Description |
+|------|-------------|
+| `upload_attachment(content, filename, mime_type)` | Upload a file (base64) |
+| `get_attachment_url(attachment_id, expires_in?)` | Get download URL |
+
+### Deliverability tools
+
+| Tool | Description |
+|------|-------------|
+| `get_deliverability_stats(inbox_id?, domain_id?, period?)` | Delivery metrics |
+| `get_suppressions(inbox_id?, domain_id?, limit?)` | List suppressed addresses |
+| `get_delivery_events(message_id?, inbox_id?, domain_id?, event_type?, limit?)` | Delivery event log |
+
+## Example conversations
+
+### "Set up an inbox and send a welcome email"
+
+```
+You: Create an inbox called "onboarding" and send a welcome email to user@example.com
+
+Claude: I'll create the inbox and send the email.
+
+[Calling create_inbox with local_part="onboarding"]
+→ Created inbox: onboarding@agents.yourdomain.com
+
+[Calling send_email with to="user@example.com", subject="Welcome!", ...]
+→ Email sent successfully (message_id: msg_abc123)
+```
+
+### "Check my inbox for new messages and respond"
+
+```
+You: Check recent threads in my support inbox and reply to any unanswered ones
+
+Claude: Let me check your threads.
+
+[Calling list_threads with inbox_id="..."]
+→ Found 3 threads, 1 needs a reply
+
+[Calling get_thread_messages with thread_id="thread_xyz"]
+→ Customer asked about pricing
+
+[Calling send_email with thread_id="thread_xyz", ...]
+→ Reply sent
+```
+
+### "Monitor deliverability"
+
+```
+You: How are my emails performing this week?
+
+Claude: [Calling get_deliverability_stats with period="7d"]
+
+Here's your 7-day delivery report:
+- Sent: 1,247 emails
+- Delivered: 98.4%
+- Bounced: 1.2%
+- Complaints: 0.08%
+Your sender reputation looks healthy.
+```
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `COMMUNE_API_KEY` | Yes | Your API key (starts with `comm_`) |
+| `COMMUNE_BASE_URL` | No | Override API URL (default: Commune cloud) |
+
+## Version check
+
+```bash
+uvx commune-mcp --version
+# commune-mcp 0.1.2 (API: v1)
+```
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="TypeScript SDK" icon="js" href="/sdks/typescript">
+  Official Node.js and TypeScript SDK for programmatic access.
+</Card>
+
+<Card title="Python SDK" icon="python" href="/sdks/python">
+  Official Python SDK with sync and async clients.
+</Card>
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Build a complete email agent end-to-end in 5 minutes.
+</Card>
+
+<Card title="Capability Matrix" icon="table" href="/capability-matrix">
+  See which features are available across all integration methods.
+</Card>
+
+</Columns>

@@ -1,0 +1,98 @@
+---
+title: "List Credit Bundles"
+api: "GET /v1/credits/bundles"
+description: "List available credit bundles that can be purchased as one-time add-ons. Purchased credits roll over and never expire."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const bundles = await commune.credits.listBundles();
+
+for (const bundle of bundles) {
+  console.log(`${bundle.id}: ${bundle.credits} credits for $${bundle.price}`);
+  console.log(`  $${bundle.price_per_credit} per credit`);
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+bundles = client.credits.list_bundles()
+
+for bundle in bundles:
+    print(f"{bundle.id}: {bundle.credits} credits for ${bundle.price}")
+    print(f"  ${bundle.price_per_credit} per credit")
+```
+```bash MCP
+list_credit_bundles()
+```
+```bash cURL
+curl https://api.commune.email/v1/credits/bundles \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune credits bundles
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "id": "starter",
+      "credits": 1000,
+      "price": 12,
+      "price_per_credit": "0.0120"
+    },
+    {
+      "id": "growth",
+      "credits": 5000,
+      "price": 55,
+      "price_per_credit": "0.0110"
+    },
+    {
+      "id": "scale",
+      "credits": 20000,
+      "price": 200,
+      "price_per_credit": "0.0100"
+    }
+  ]
+}
+```
+</ResponseExample>
+
+## Response
+
+<ResponseField name="data" type="CreditBundle[]">
+  Array of all available credit bundles.
+
+  <Expandable title="CreditBundle properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Bundle identifier. One of: `starter`, `growth`, `scale`. Use this ID in the purchase endpoint.
+    </ResponseField>
+    <ResponseField name="credits" type="number">
+      Number of credits included in this bundle.
+    </ResponseField>
+    <ResponseField name="price" type="number">
+      Price in USD for this bundle (one-time payment).
+    </ResponseField>
+    <ResponseField name="price_per_credit" type="string">
+      Cost per credit formatted as a decimal string (e.g., `"0.0120"`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+Larger bundles offer better per-credit pricing:
+- Starter (1,000 credits): $0.0120/credit
+- Growth (5,000 credits): $0.0110/credit
+- Scale (20,000 credits): $0.0100/credit
+
+Purchased credits roll over month-to-month and do not expire.
+</Note>

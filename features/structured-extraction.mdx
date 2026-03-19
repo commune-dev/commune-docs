@@ -1,0 +1,302 @@
+---
+title: Structured Data Extraction
+description: Define a JSON schema on an inbox and get structured data extracted from every inbound email.
+---
+
+<Badge color="purple" size="sm">Business</Badge>
+
+Define a JSON schema on your inbox. When an email arrives, an LLM extracts the fields you specified and returns them as structured data in the message and webhook payload. No parsing or regex needed.
+
+## How it works
+
+```
+Inbound email → Commune parses content → LLM extracts against your schema → extracted_data in message & webhook
+```
+
+1. You define a JSON schema on your inbox describing what to extract
+2. When an email arrives, Commune uses an LLM to extract data matching your schema
+3. The extracted data appears in `message.metadata.extracted_data` and `webhook.extractedData`
+4. Your agent uses the structured data directly — no parsing or regex needed
+
+## Configure extraction schema
+
+Set a schema on your inbox to define what data to extract:
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.setExtractionSchema({
+  domainId: 'domain_id',
+  inboxId: 'inbox_id',
+  schema: {
+    name: 'support_ticket',
+    description: 'Extract support ticket details from customer emails',
+    enabled: true,
+    schema: {
+      type: 'object',
+      properties: {
+        order_number: {
+          type: 'string',
+          description: 'Order or reference number mentioned in the email',
+        },
+        intent: {
+          type: 'string',
+          enum: ['billing', 'technical', 'shipping', 'returns', 'general'],
+          description: 'Primary customer intent',
+        },
+        urgency: {
+          type: 'string',
+          enum: ['low', 'medium', 'high', 'critical'],
+          description: 'How urgent the request appears',
+        },
+        summary: {
+          type: 'string',
+          description: 'One-sentence summary of the customer request',
+        },
+        sentiment: {
+          type: 'string',
+          enum: ['positive', 'neutral', 'negative', 'angry'],
+          description: 'Customer emotional tone',
+        },
+      },
+    },
+  },
+});
+```
+
+```python Python
+client.inboxes.set_extraction_schema(
+    domain_id=domain_id,
+    inbox_id=inbox_id,
+    name="support_ticket",
+    description="Extract support ticket details from customer emails",
+    enabled=True,
+    schema={
+        "type": "object",
+        "properties": {
+            "order_number": {
+                "type": "string",
+                "description": "Order or reference number",
+            },
+            "intent": {
+                "type": "string",
+                "enum": ["billing", "technical", "shipping", "returns", "general"],
+            },
+            "urgency": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "critical"],
+            },
+            "summary": {"type": "string"},
+            "sentiment": {
+                "type": "string",
+                "enum": ["positive", "neutral", "negative", "angry"],
+            },
+        },
+    },
+)
+```
+
+```bash cURL
+curl -X PUT "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID/extraction-schema" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "support_ticket",
+    "description": "Extract support ticket details",
+    "enabled": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "order_number": { "type": "string", "description": "Order number" },
+        "intent": { "type": "string", "enum": ["billing", "technical", "shipping"] },
+        "urgency": { "type": "string", "enum": ["low", "medium", "high"] },
+        "summary": { "type": "string" },
+        "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] }
+      }
+    }
+  }'
+```
+
+</CodeGroup>
+
+### Schema parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | `string` | Yes | Schema name for identification |
+| `description` | `string` | No | What this schema extracts (helps the LLM) |
+| `enabled` | `boolean` | No | Toggle extraction on/off (default: true) |
+| `schema` | `object` | Yes | JSON Schema defining the fields to extract |
+
+### Schema definition tips
+
+- **Use `description`** on every property — the LLM uses these to understand what to look for
+- **Use `enum`** for categorical fields — constrains output to valid values
+- **Keep schemas focused** — extract 3–8 fields per schema for best accuracy
+- **Use `type: "string"` for dates** — the LLM returns ISO strings; parse in your code
+
+## Example: extracted data in webhook
+
+When a customer sends:
+
+> *"Hi, my order #ORD-5678 hasn't arrived yet. I ordered it 3 days ago and the tracking still shows 'processing'. This is really frustrating. Can you please look into this urgently?"*
+
+Your webhook receives:
+
+```json
+{
+  "message": {
+    "content": "Hi, my order #ORD-5678 hasn't arrived yet...",
+    "metadata": {
+      "subject": "Order not received",
+      "extracted_data": {
+        "order_number": "ORD-5678",
+        "intent": "shipping",
+        "urgency": "high",
+        "summary": "Customer's order ORD-5678 hasn't arrived after 3 days, tracking shows processing",
+        "sentiment": "negative"
+      }
+    }
+  },
+  "extractedData": {
+    "order_number": "ORD-5678",
+    "intent": "shipping",
+    "urgency": "high",
+    "summary": "Customer's order ORD-5678 hasn't arrived after 3 days, tracking shows processing",
+    "sentiment": "negative"
+  }
+}
+```
+
+Your agent can now route this directly — look up order ORD-5678, check shipping status, and send a targeted response, all without parsing the email text.
+
+## Use case examples
+
+### E-commerce support
+
+```json
+{
+  "schema": {
+    "type": "object",
+    "properties": {
+      "order_number": { "type": "string", "description": "Order ID or number" },
+      "product_name": { "type": "string", "description": "Product mentioned" },
+      "issue_type": {
+        "type": "string",
+        "enum": ["damaged", "wrong_item", "not_received", "return", "refund"]
+      },
+      "amount": { "type": "string", "description": "Dollar amount if mentioned" }
+    }
+  }
+}
+```
+
+### SaaS onboarding
+
+```json
+{
+  "schema": {
+    "type": "object",
+    "properties": {
+      "company_name": { "type": "string", "description": "Company or org name" },
+      "company_size": { "type": "string", "description": "Number of employees or team size" },
+      "use_case": { "type": "string", "description": "What they want to use the product for" },
+      "integration_needs": {
+        "type": "string",
+        "description": "Integrations or tools they need"
+      },
+      "timeline": { "type": "string", "description": "When they need to be up and running" }
+    }
+  }
+}
+```
+
+### Invoice processing
+
+```json
+{
+  "schema": {
+    "type": "object",
+    "properties": {
+      "invoice_number": { "type": "string" },
+      "vendor_name": { "type": "string" },
+      "total_amount": { "type": "string", "description": "Total amount with currency" },
+      "due_date": { "type": "string", "description": "Payment due date (ISO format)" },
+      "line_items": {
+        "type": "string",
+        "description": "Comma-separated list of line items"
+      }
+    }
+  }
+}
+```
+
+## Disable extraction
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.removeExtractionSchema({
+  domainId: 'domain_id',
+  inboxId: 'inbox_id',
+});
+```
+
+```bash cURL
+curl -X DELETE "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID/extraction-schema" \
+  -H "Authorization: Bearer comm_..."
+```
+
+```python Python
+client.inboxes.remove_extraction_schema(
+    domain_id=domain_id,
+    inbox_id=inbox_id,
+)
+```
+
+</CodeGroup>
+
+<Prompt description="Configure structured extraction on an inbox via MCP" actions={["copy", "cursor"]}>
+  Set up structured data extraction on my support inbox. I want to extract: order number, customer intent (billing, shipping, technical, or general), urgency level (low, medium, high), and a one-sentence summary of the request.
+</Prompt>
+
+## Extraction object on inbox
+
+When an extraction schema is configured, the inbox object includes:
+
+```json
+{
+  "extractionSchema": {
+    "name": "support_ticket",
+    "description": "Extract support ticket details",
+    "schema": { ... },
+    "enabled": true
+  }
+}
+```
+
+<Note>
+  Structured extraction is a paid feature available on Pro plans and above.
+</Note>
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Access extracted data in the webhook payload on every inbound email.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Configure extraction schemas on individual inboxes.
+</Card>
+
+<Card title="Prompt Injection Detection" icon="robot" href="/security/prompt-injection">
+  Protect your agent from adversarial content in inbound emails.
+</Card>
+
+<Card title="Search" icon="magnifying-glass" href="/features/search">
+  Search threads by semantic meaning using extracted data.
+</Card>
+
+</Columns>

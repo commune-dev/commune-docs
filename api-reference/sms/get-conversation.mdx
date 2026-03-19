@@ -1,0 +1,131 @@
+---
+title: "Get Conversation Thread"
+api: "GET /v1/sms/conversations/{remoteNumber}"
+description: "Retrieve all messages in a conversation thread between your phone number and a specific remote number."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const { data, thread_id } = await commune.sms.getConversation('+14155559999', {
+  phoneNumberId: 'pn_01abc123',
+});
+
+console.log('Thread:', thread_id);
+for (const msg of data) {
+  console.log(`[${msg.direction}] ${msg.content}`);
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.sms.get_conversation(
+    "+14155559999",
+    phone_number_id="pn_01abc123",
+)
+
+print("Thread:", result.thread_id)
+for msg in result.data:
+    print(f"[{msg.direction}] {msg.content}")
+```
+```bash MCP
+get_sms_conversation(
+  remote_number="+14155559999",
+  phone_number_id="pn_01abc123"
+)
+```
+```bash cURL
+curl "https://api.commune.email/v1/sms/conversations/%2B14155559999?phone_number_id=pn_01abc123" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune sms conversations --remote "+14155559999" --phone-number-id pn_01abc123
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "message_id": "sms_SMabc123def456",
+      "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+      "direction": "outbound",
+      "content": "Hello from your AI agent!",
+      "created_at": "2026-02-25T10:00:00.000Z",
+      "metadata": {
+        "delivery_status": "delivered",
+        "from_number": "+18005550001",
+        "to_number": "+14155559999",
+        "phone_number_id": "pn_01abc123",
+        "message_sid": "SMabc123def456",
+        "credits_charged": 2,
+        "sms_segments": 1,
+        "has_attachments": false,
+        "mms_media": null,
+        "delivery_data": {
+          "sent_at": "2026-02-25T10:00:01.000Z",
+          "delivered_at": "2026-02-25T10:00:03.000Z"
+        }
+      }
+    },
+    {
+      "message_id": "sms_SMxyz987",
+      "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+      "direction": "inbound",
+      "content": "Got it, thanks!",
+      "created_at": "2026-02-25T10:05:00.000Z",
+      "metadata": {
+        "delivery_status": "delivered",
+        "from_number": "+14155559999",
+        "to_number": "+18005550001",
+        "phone_number_id": "pn_01abc123",
+        "message_sid": "SMxyz987",
+        "credits_charged": 1,
+        "sms_segments": 1,
+        "has_attachments": false,
+        "mms_media": null,
+        "delivery_data": null
+      }
+    }
+  ],
+  "thread_id": "a1b2c3d4e5f6789012345678901234ab"
+}
+```
+```json 400 Missing Parameter
+{
+  "error": "phone_number_id query param required"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="remoteNumber" type="string" required>
+  The remote (external) phone number in E.164 format, URL-encoded. Example: `%2B14155559999` (for `+14155559999`).
+</ParamField>
+
+## Query Parameters
+
+<ParamField query="phone_number_id" type="string" required>
+  The Commune phone number ID to scope this conversation to. Format: `pn_...`. Required because the same remote number could have conversations with multiple of your phone numbers.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="SmsMessage[]">
+  Array of messages in this conversation in ascending chronological order (oldest first). Maximum 100 messages returned. See [List SMS Messages](/api-reference/sms/list) for the full message schema.
+</ResponseField>
+
+<ResponseField name="thread_id" type="string">
+  The conversation thread ID (32 hex characters). This is a SHA-256 hash derived from `orgId:phoneNumberId:remoteNumber` — deterministic and stable for the lifetime of the conversation.
+</ResponseField>
+
+<Note>
+Thread IDs are deterministic. The same combination of `orgId`, `phone_number_id`, and remote number always produces the same thread ID. You can compute it client-side if needed, but the API returns it for convenience.
+</Note>

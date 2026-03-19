@@ -1,0 +1,316 @@
+---
+title: What happens if my agent sends something wrong?
+description: Damage control, incident response, and prevention strategies for when an AI agent sends an incorrect or inappropriate email.
+---
+
+## The short answer
+
+You can't recall a sent email. SMTP has no undo button. Once the message hits the recipient's mail server, it's delivered. What you can do: send a correction immediately, audit what happened, figure out why, and build guardrails so it doesn't happen again. Prevention is always cheaper than damage control.
+
+## You can't unsend email
+
+This is worth stating plainly because it changes how you architect agent email systems. Unlike a Slack message you can edit or a web page you can update, email is fire-and-forget. The recipient has a copy. Their mail server has a copy. Any forwarded recipients have copies. There is no API call that reaches into someone else's inbox and deletes your message.
+
+Microsoft Outlook's "recall" feature only works within the same Exchange organization. Gmail's "undo send" only works for a few seconds before the email actually leaves Google's servers. Neither helps you after delivery.
+
+This means your entire strategy must be weighted toward prevention, not remediation.
+
+## When it does happen: incident response
+
+Despite your best efforts, an agent will eventually send something wrong. A hallucinated fact, a reply to the wrong thread, a tone-deaf response to a sensitive situation. Here's the playbook.
+
+### Step 1: Detect
+
+You need to know something went wrong before the recipient complains. Set up monitoring:
+
+<CodeGroup>
+
+```typescript TypeScript
+// Post-send monitoring: check every outbound email against quality rules
+async function monitorOutbound(): Promise<void> {
+  const recentMessages = await commune.messages.list({
+    direction: 'outbound',
+    after: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // Last hour
+    limit: 100,
+  });
+
+  for (const msg of recentMessages.data) {
+    const issues = await detectIssues(msg);
+
+    if (issues.length > 0) {
+      await alert.send({
+        channel: '#agent-alerts',
+        severity: issues.some(i => i.severity === 'critical') ? 'critical' : 'warning',
+        message: `Potential issue with message ${msg.id}`,
+        details: issues,
+        message_preview: msg.subject,
+        recipient: msg.to,
+      });
+    }
+  }
+}
+
+async function detectIssues(msg: Message): Promise<Issue[]> {
+  const issues: Issue[] = [];
+
+  // Check for hallucinated URLs
+  const urls = extractUrls(msg.html);
+  for (const url of urls) {
+    const exists = await checkUrlExists(url);
+    if (!exists) issues.push({ type: 'dead_link', severity: 'warning', detail: url });
+  }
+
+  // Check for contradictions with previous messages in thread
+  if (msg.thread_id) {
+    const thread = await commune.threads.get(msg.thread_id);
+    const contradiction = await detectContradiction(thread.messages, msg);
+    if (contradiction) {
+      issues.push({ type: 'contradiction', severity: 'critical', detail: contradiction });
+    }
+  }
+
+  // Check for wrong-recipient signals
+  if (msg.thread_id) {
+    const thread = await commune.threads.get(msg.thread_id);
+    const expectedRecipient = thread.participants.find(p => p.role === 'external');
+    if (expectedRecipient && expectedRecipient.email !== msg.to) {
+      issues.push({ type: 'wrong_recipient', severity: 'critical', detail: `Expected ${expectedRecipient.email}, sent to ${msg.to}` });
+    }
+  }
+
+  return issues;
+}
+```
+
+```python Python
+# Post-send monitoring: check every outbound email against quality rules
+async def monitor_outbound() -> None:
+    recent = client.messages.list(
+        direction="outbound",
+        after=(datetime.utcnow() - timedelta(hours=1)).isoformat(),
+        limit=100,
+    )
+
+    for msg in recent.data:
+        issues = await detect_issues(msg)
+
+        if issues:
+            severity = "critical" if any(i["severity"] == "critical" for i in issues) else "warning"
+            await alert_slack(
+                channel="#agent-alerts",
+                severity=severity,
+                message=f"Potential issue with message {msg.id}",
+                details=issues,
+            )
+
+async def detect_issues(msg) -> list[dict]:
+    issues = []
+
+    # Check for hallucinated URLs
+    urls = extract_urls(msg.html)
+    for url in urls:
+        if not await check_url_exists(url):
+            issues.append({"type": "dead_link", "severity": "warning", "detail": url})
+
+    # Check for contradictions with previous thread messages
+    if msg.thread_id:
+        thread = client.threads.get(msg.thread_id)
+        contradiction = await detect_contradiction(thread.messages, msg)
+        if contradiction:
+            issues.append({"type": "contradiction", "severity": "critical", "detail": contradiction})
+
+    return issues
+```
+
+</CodeGroup>
+
+### Step 2: Assess
+
+Not every wrong email needs the same response. Classify the severity:
+
+| Severity | Example | Response |
+|----------|---------|----------|
+| **Low** | Minor factual error, awkward phrasing | Note it, fix the agent's prompt, no correction email needed |
+| **Medium** | Wrong product information, incorrect pricing | Send a correction email |
+| **High** | Sent to wrong person, leaked confidential data | Immediate correction + internal escalation |
+| **Critical** | Sent offensive content, legal liability | Immediate correction + executive escalation + legal review |
+
+### Step 3: Respond
+
+For medium severity and above, send a correction in the same thread:
+
+```typescript
+async function sendCorrection(
+  originalMessageId: string,
+  correctionHtml: string,
+): Promise<void> {
+  const original = await commune.messages.get(originalMessageId);
+
+  await commune.messages.send({
+    to: original.to,
+    subject: `Correction: ${original.subject}`,
+    html: correctionHtml,
+    thread_id: original.thread_id,
+  });
+
+  // Log the incident
+  await db.incidents.insert({
+    original_message_id: originalMessageId,
+    correction_sent_at: new Date(),
+    severity: 'medium',
+    resolution: 'correction_sent',
+  });
+}
+```
+
+Keep corrections simple and direct. "Our previous email contained an error. [Correct information]. We apologize for the confusion." Don't over-explain that an AI wrote it unless your recipients already know.
+
+### Step 4: Prevent recurrence
+
+After every incident, update your guardrails:
+
+- Add the failure pattern to your test suite
+- Tighten confidence thresholds if the agent was auto-sending
+- Add an escalation rule if the error category wasn't covered
+- Update the agent's system prompt to address the specific failure mode
+
+## Prevention layers
+
+The best incident is the one that never happens. Stack these defenses:
+
+### Test mode
+
+Before your agent goes live, run it in test mode where it drafts emails but doesn't actually send them. Review a sample of drafts to calibrate quality.
+
+```typescript
+const TEST_MODE = process.env.AGENT_TEST_MODE === 'true';
+
+async function agentSend(payload: SendEmailPayload): Promise<void> {
+  if (TEST_MODE) {
+    // Log the draft without sending
+    await db.testDrafts.insert({
+      ...payload,
+      would_have_sent_at: new Date(),
+    });
+    console.log(`[TEST MODE] Would have sent to ${payload.to}: ${payload.subject}`);
+    return;
+  }
+
+  await commune.messages.send(payload);
+}
+```
+
+### Rate limiting
+
+Commune enforces per-plan rate limits, but you should also set your own agent-level limits that are tighter than Commune's. If your support agent normally sends 50 emails per hour and suddenly tries to send 500, something is wrong.
+
+```typescript
+const AGENT_HOURLY_LIMIT = 100;
+
+async function rateLimitedSend(agentId: string, payload: SendEmailPayload): Promise<void> {
+  const hourlyCount = await redis.incr(`agent:${agentId}:hourly_sends`);
+
+  if (hourlyCount === 1) {
+    await redis.expire(`agent:${agentId}:hourly_sends`, 3600);
+  }
+
+  if (hourlyCount > AGENT_HOURLY_LIMIT) {
+    await alert.send({
+      channel: '#agent-alerts',
+      message: `Agent ${agentId} exceeded hourly send limit (${hourlyCount}/${AGENT_HOURLY_LIMIT})`,
+      severity: 'critical',
+    });
+    throw new Error('Agent hourly send limit exceeded');
+  }
+
+  await commune.messages.send(payload);
+}
+```
+
+### Human-in-the-loop
+
+For high-stakes emails, route through an approval queue. See [How do I add human approval before my agent sends email?](/knowledge-base/human-in-the-loop-approval) for the full implementation.
+
+### Confidence thresholds
+
+Only auto-send when the agent is confident. Route uncertain drafts to human review. This catches most quality issues before they reach recipients.
+
+## Auditing what was sent
+
+When investigating an incident, you need the full picture. Use Commune's message list API to pull everything your agent sent:
+
+<CodeGroup>
+
+```typescript TypeScript
+// Pull all messages sent by a specific inbox in a time range
+const messages = await commune.messages.list({
+  inbox_id: agentInboxId,
+  direction: 'outbound',
+  after: '2025-03-01T00:00:00Z',
+  before: '2025-03-02T00:00:00Z',
+});
+
+// Export for review
+for (const msg of messages.data) {
+  console.log({
+    id: msg.id,
+    to: msg.to,
+    subject: msg.subject,
+    sent_at: msg.created_at,
+    thread_id: msg.thread_id,
+    // msg.html contains the full email body
+  });
+}
+```
+
+```python Python
+# Pull all messages sent by a specific inbox in a time range
+messages = client.messages.list(
+    inbox_id=agent_inbox_id,
+    direction="outbound",
+    after="2025-03-01T00:00:00Z",
+    before="2025-03-02T00:00:00Z",
+)
+
+# Export for review
+for msg in messages.data:
+    print({
+        "id": msg.id,
+        "to": msg.to,
+        "subject": msg.subject,
+        "sent_at": msg.created_at,
+        "thread_id": msg.thread_id,
+    })
+```
+
+</CodeGroup>
+
+Pair this with your own audit logs that capture the agent's reasoning — what context it had, what prompt it used, what confidence score it assigned. Commune's API tells you what was sent. Your logs tell you why.
+
+## The honest truth
+
+Giving an AI agent the ability to send email is a trust decision. The risk is real — a bad email can damage a relationship, create legal liability, or embarrass your company. But the risk is manageable with the right architecture: test mode first, approval queues second, gradual autonomy third.
+
+Every company that deploys agent email goes through the same progression: fully supervised, then supervised for edge cases, then autonomous with monitoring. The timeline depends on your risk tolerance and the quality of your guardrails. Don't skip steps.
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Human-in-the-Loop Approval" icon="user-check" href="/knowledge-base/human-in-the-loop-approval">
+  Pre-send approval flows, confidence thresholds, and escalation rules.
+</Card>
+
+<Card title="Preventing Data Leakage" icon="lock" href="/knowledge-base/preventing-data-leakage">
+  Stop sensitive data from appearing in outbound emails.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  How Commune enforces sending limits to prevent burst damage.
+</Card>
+
+<Card title="Sending Messages" icon="paper-plane" href="/features/messages">
+  Full API reference for sending, listing, and retrieving messages.
+</Card>
+
+</Columns>

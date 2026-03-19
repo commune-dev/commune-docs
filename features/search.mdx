@@ -1,0 +1,167 @@
+---
+title: Search
+description: Find email threads by keyword or semantic meaning. Vector search on Business, regex on all plans.
+---
+
+Search threads by meaning or text. Vector search understands intent ("angry customer about shipping"), while regex search matches exact terms. Both return thread summaries your agent can act on.
+
+<Note>
+  Semantic vector search requires <Badge color="purple" size="sm">Business</Badge> or higher. Regex search is available on all plans as a fallback.
+</Note>
+
+## Search threads
+
+<CodeGroup>
+
+```typescript TypeScript
+// Via REST API
+const res = await fetch(
+  'https://api.commune.email/v1/search/threads?q=invoice+payment&inbox_id=inbox_abc&limit=10',
+  { headers: { Authorization: `Bearer ${apiKey}` } }
+);
+const { data, search_type } = await res.json();
+
+for (const result of data) {
+  console.log(`${result.subject} (score: ${result.score})`);
+}
+console.log(`Search type: ${search_type}`); // "vector" or "regex"
+```
+
+```python Python
+import requests
+
+resp = requests.get(
+    "https://api.commune.email/v1/search/threads",
+    headers={"Authorization": f"Bearer {api_key}"},
+    params={"q": "invoice payment", "inbox_id": "inbox_abc", "limit": 10},
+)
+data = resp.json()
+for result in data["data"]:
+    print(f"{result['subject']} (score: {result.get('score', 'N/A')})")
+print(f"Search type: {data['search_type']}")
+```
+
+```bash MCP
+search_threads(
+  query="invoice payment",
+  inbox_id="inbox_abc",
+  limit=10
+)
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/search/threads?q=invoice+payment&inbox_id=inbox_abc&limit=10" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+<Prompt description="Search email threads by semantic meaning" actions={["copy", "cursor"]}>
+  Search my support inbox for any threads about invoice payment or billing disputes from the last 30 days.
+</Prompt>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `q` | `string` | Yes | Search query |
+| `inbox_id` | `string` | No* | Filter by inbox (recommended) |
+| `domain_id` | `string` | No* | Filter by domain |
+| `limit` | `number` | No | Max results (1–100, default 20) |
+
+<Note>At least one of `inbox_id` or `domain_id` is required.</Note>
+
+### Response (vector search)
+
+```json
+{
+  "data": [
+    {
+      "thread_id": "thread_abc123",
+      "subject": "Invoice #INV-2024-001 — payment overdue",
+      "score": 0.89,
+      "inbox_id": "inbox_abc",
+      "domain_id": "d_abc",
+      "participants": ["billing@company.com", "customer@example.com"],
+      "direction": "inbound"
+    }
+  ],
+  "search_type": "vector"
+}
+```
+
+### Response (regex fallback)
+
+When vector search is not available, results come from regex-based text matching on subjects and content:
+
+```json
+{
+  "data": [
+    {
+      "thread_id": "thread_abc123",
+      "subject": "Invoice #INV-2024-001 — payment overdue",
+      "message_count": 3,
+      "last_message_at": "2026-02-14T10:30:00Z"
+    }
+  ],
+  "search_type": "regex"
+}
+```
+
+## Search modes
+
+### Vector search (semantic)
+
+When configured with Qdrant and Azure OpenAI embeddings, search understands meaning:
+- `"angry customer about shipping"` matches emails about delivery complaints
+- `"pricing questions"` matches emails about costs, quotes, and packages
+- `"technical integration help"` matches API questions, SDK issues, etc.
+
+Vector search returns a `score` (0–1) indicating semantic similarity.
+
+### Regex search (fallback)
+
+When vector search is unavailable, Commune falls back to regex-based matching:
+- Searches subject lines and message content
+- Case-insensitive text matching
+- Works without any additional infrastructure
+
+The `search_type` field in the response tells you which mode was used.
+
+## After searching
+
+Once you have search results, use the thread API to read full conversations:
+
+```typescript
+const results = await searchThreads(query, inbox_id);
+for (const result of results) {
+  const messages = await commune.threads.messages(result.thread_id);
+  // Process messages...
+}
+```
+
+<Note>
+  Semantic vector search is available on Business plans and above and requires additional infrastructure (Qdrant + embedding model).
+</Note>
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Threads" icon="comments" href="/features/threads">
+  Read thread messages and manage triage after searching.
+</Card>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Extract structured data from emails to improve search relevance.
+</Card>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Full message object reference for processing search results.
+</Card>
+
+<Card title="Capability Matrix" icon="table" href="/capability-matrix">
+  See which features are available across API, SDKs, and MCP.
+</Card>
+
+</Columns>

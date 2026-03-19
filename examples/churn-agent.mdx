@@ -1,0 +1,343 @@
+---
+title: "Example: Churn Prevention Agent"
+description: Build an agent that detects at-risk customers and sends personalized re-engagement emails.
+---
+
+This example builds a churn prevention agent that:
+- Monitors inbox threads for disengagement signals
+- Identifies at-risk customers using extracted data
+- Sends personalized re-engagement emails
+- Tracks delivery and engagement metrics
+
+## Architecture
+
+```
+Scheduled job → List threads → Identify at-risk → Generate email → Send re-engagement → Track delivery
+```
+
+## Full implementation
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+import OpenAI from 'openai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+interface AtRiskCustomer {
+  email: string;
+  threadId: string;
+  lastActivity: string;
+  daysSinceLastActivity: number;
+  context: string;
+}
+
+async function findAtRiskCustomers(inboxId: string): Promise<AtRiskCustomer[]> {
+  const atRisk: AtRiskCustomer[] = [];
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  // Get all threads
+  let cursor: string | undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const result = await commune.threads.list({
+      inbox_id: inboxId,
+      limit: 100,
+      cursor,
+      order: 'desc',
+    });
+
+    for (const thread of result.data) {
+      const lastMessageDate = new Date(thread.last_message_at);
+      const daysSince = Math.floor(
+        (Date.now() - lastMessageDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      // At risk: no activity in 14-60 days, had previous engagement
+      if (daysSince >= 14 && daysSince <= 60 && thread.message_count >= 2) {
+        // Get the last message to understand context
+        const messages = await commune.threads.messages(thread.thread_id, {
+          limit: 3,
+          order: 'desc',
+        });
+
+        const lastInbound = messages.find(m => m.direction === 'inbound');
+        if (!lastInbound) continue;
+
+        const sender = lastInbound.participants.find(p => p.role === 'sender');
+        if (!sender) continue;
+
+        atRisk.push({
+          email: sender.identity,
+          threadId: thread.thread_id,
+          lastActivity: thread.last_message_at,
+          daysSinceLastActivity: daysSince,
+          context: `Subject: ${thread.subject}\nLast message: ${lastInbound.content.slice(0, 200)}`,
+        });
+      }
+    }
+
+    hasMore = result.has_more;
+    cursor = result.next_cursor || undefined;
+  }
+
+  return atRisk;
+}
+
+async function sendReEngagement(customer: AtRiskCustomer) {
+  // Generate personalized re-engagement email
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: `You write friendly, non-pushy re-engagement emails for Acme Corp.
+Keep it short (2-3 sentences). Reference their previous interaction naturally.
+Include a clear call-to-action. Don't use aggressive sales language.`,
+      },
+      {
+        role: 'user',
+        content: `Customer hasn't been active for ${customer.daysSinceLastActivity} days.
+Their last conversation context:
+${customer.context}
+
+Write a re-engagement email body (HTML).`,
+      },
+    ],
+  });
+
+  const htmlBody = completion.choices[0].message.content;
+
+  await commune.messages.send({
+    to: customer.email,
+    subject: 'We miss you — anything we can help with?',
+    html: htmlBody,
+    thread_id: customer.threadId, // Continue the existing conversation
+  });
+
+  console.log(`Re-engagement sent to ${customer.email} (${customer.daysSinceLastActivity}d inactive)`);
+}
+
+async function runChurnPrevention() {
+  const inboxId = process.env.INBOX_ID!;
+
+  console.log('Finding at-risk customers...');
+  const atRisk = await findAtRiskCustomers(inboxId);
+  console.log(`Found ${atRisk.length} at-risk customers`);
+
+  // Send re-engagement emails (with rate limiting)
+  for (const customer of atRisk.slice(0, 50)) { // Max 50 per run
+    try {
+      await sendReEngagement(customer);
+      // Respect rate limits
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (err) {
+      console.error(`Failed for ${customer.email}:`, err);
+    }
+  }
+
+  // Check delivery metrics
+  const res = await fetch(
+    `https://api.commune.email/v1/delivery/metrics?inbox_id=${inboxId}&period=24h`,
+    { headers: { Authorization: `Bearer ${process.env.COMMUNE_API_KEY}` } }
+  );
+  const { data: metrics } = await res.json() as any;
+  console.log(`Delivery report: ${metrics.sent} sent, ${metrics.delivery_rate} delivered`);
+}
+
+// Run daily via cron
+runChurnPrevention();
+```
+
+```python Python
+import os
+import time
+from datetime import datetime, timedelta, timezone
+from commune import CommuneClient
+from openai import OpenAI
+
+commune_client = CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+
+def find_at_risk_customers(inbox_id: str) -> list[dict]:
+    at_risk = []
+    cursor = None
+    has_more = True
+
+    while has_more:
+        result = commune_client.threads.list(
+            inbox_id=inbox_id, limit=100, cursor=cursor, order="desc"
+        )
+
+        for thread in result.data:
+            last_msg = datetime.fromisoformat(
+                thread.last_message_at.replace("Z", "+00:00")
+            )
+            days_since = (datetime.now(timezone.utc) - last_msg).days
+
+            if 14 <= days_since <= 60 and thread.message_count >= 2:
+                messages = commune_client.threads.messages(
+                    thread.thread_id, limit=3, order="desc"
+                )
+                last_inbound = next(
+                    (m for m in messages if m.direction == "inbound"), None
+                )
+                if not last_inbound:
+                    continue
+
+                sender = next(
+                    (p.identity for p in last_inbound.participants if p.role == "sender"),
+                    None,
+                )
+                if not sender:
+                    continue
+
+                at_risk.append({
+                    "email": sender,
+                    "thread_id": thread.thread_id,
+                    "days_inactive": days_since,
+                    "context": f"Subject: {thread.subject}\n{last_inbound.content[:200]}",
+                })
+
+        has_more = result.has_more
+        cursor = result.next_cursor
+
+    return at_risk
+
+
+def send_re_engagement(customer: dict):
+    completion = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Write a friendly, short re-engagement email (2-3 sentences). "
+                    "Reference their previous conversation naturally."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Inactive {customer['days_inactive']} days.\n{customer['context']}",
+            },
+        ],
+    )
+
+    html_body = completion.choices[0].message.content
+
+    commune_client.messages.send(
+        to=customer["email"],
+        subject="We miss you — anything we can help with?",
+        html=html_body,
+        thread_id=customer["thread_id"],
+    )
+    print(f"Sent to {customer['email']} ({customer['days_inactive']}d inactive)")
+
+
+def run():
+    inbox_id = os.environ["INBOX_ID"]
+
+    at_risk = find_at_risk_customers(inbox_id)
+    print(f"Found {len(at_risk)} at-risk customers")
+
+    for customer in at_risk[:50]:
+        try:
+            send_re_engagement(customer)
+            time.sleep(0.5)  # Rate limiting
+        except Exception as e:
+            print(f"Failed for {customer['email']}: {e}")
+
+
+if __name__ == "__main__":
+    run()
+```
+
+</CodeGroup>
+
+## Setup steps
+
+<Steps>
+
+<Step title="Create an inbox">
+
+```bash
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -d '{
+    "local_part": "outreach",
+    "display_name": "Acme Team"
+  }'
+```
+
+</Step>
+
+<Step title="Set environment variables">
+
+```bash
+export COMMUNE_API_KEY=comm_...
+export OPENAI_API_KEY=sk-...
+export INBOX_ID=inbox_...
+```
+
+</Step>
+
+<Step title="Schedule with cron">
+
+```bash
+# Run daily at 9am UTC
+0 9 * * * cd /path/to/agent && node churn-agent.js
+```
+
+Or deploy as a Railway cron job, GitHub Action, or any scheduled task runner.
+
+</Step>
+
+</Steps>
+
+## Monitoring results
+
+After running, check your delivery metrics:
+
+```bash
+curl "https://api.commune.email/v1/delivery/metrics?inbox_id=INBOX_ID&period=7d" \
+  -H "Authorization: Bearer comm_..."
+```
+
+Track:
+- **Delivery rate** — are re-engagement emails reaching inboxes?
+- **Bounce rate** — are any at-risk customers' addresses invalid?
+- **Response rate** — how many customers reply? (check new inbound messages)
+
+## Improvements
+
+- **Segmentation** — different messages for different inactivity durations
+- **A/B testing** — vary subject lines and measure open rates
+- **Exclude recent re-engagements** — don't email the same person twice in 30 days
+- **Sentiment tracking** — use extraction schemas to measure response sentiment
+- **Escalation** — if a customer responds negatively, route to a human
+
+## Related docs
+
+<Columns cols={2}>
+
+<Card title="Threads" icon="comments" href="/features/threads">
+  List and paginate threads to find at-risk customers by last activity.
+</Card>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track delivery rates and bounce rates on re-engagement campaigns.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Understand sending limits when running bulk re-engagement campaigns.
+</Card>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Send re-engagement emails using the thread ID to continue conversations.
+</Card>
+
+</Columns>

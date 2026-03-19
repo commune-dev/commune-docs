@@ -1,0 +1,370 @@
+---
+title: Inboxes
+description: Create and manage email addresses for your AI agents. Each inbox gets its own webhook, extraction schema, and display name.
+---
+
+An inbox is an email address. Create one, and your agent can send and receive at that address. Each inbox can have its own webhook, extraction schema, and display name.
+
+## Create an inbox
+
+The simplest way — Commune auto-assigns a domain:
+
+<CodeGroup>
+
+```typescript TypeScript
+const inbox = await commune.inboxes.create({
+  localPart: 'support',
+});
+// → support@agents.yourdomain.com
+```
+
+```python Python
+inbox = client.inboxes.create(local_part="support")
+# → support@agents.yourdomain.com
+```
+
+```bash MCP
+create_inbox(local_part="support")
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{"local_part": "support"}'
+```
+
+</CodeGroup>
+
+### With full options
+
+<CodeGroup>
+
+```typescript TypeScript
+const inbox = await commune.inboxes.create({
+  domainId: 'domain_id',
+  localPart: 'billing',
+  agent: { name: 'Billing Agent' },
+  webhook: {
+    endpoint: 'https://your-server.com/webhook',
+    events: ['inbound'],
+  },
+});
+```
+
+```python Python
+inbox = client.inboxes.create(
+    local_part="billing",
+    domain_id="domain_id",
+    name="Billing Agent",
+    webhook={"endpoint": "https://your-server.com/webhook"},
+)
+```
+
+```bash MCP
+create_inbox(
+  local_part="billing",
+  domain_id="domain_id",
+  name="Billing Agent",
+  display_name="Acme Billing",
+  webhook_endpoint="https://your-server.com/webhook"
+)
+```
+
+```bash cURL
+curl -X POST https://api.commune.email/v1/inboxes \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "local_part": "billing",
+    "domain_id": "domain_id",
+    "name": "Billing Agent",
+    "display_name": "Acme Billing",
+    "webhook": {
+      "endpoint": "https://your-server.com/webhook",
+      "events": ["inbound"]
+    }
+  }'
+```
+
+</CodeGroup>
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `local_part` | `string` | Yes | The part before `@` (e.g., `support` → support@domain.com) |
+| `domain_id` | `string` | No | Domain to create under. Auto-resolved if omitted. |
+| `name` | `string` | No | Agent name (used as display name fallback) |
+| `display_name` | `string` | No | Sender name shown in email clients (e.g., "Acme Support") |
+| `webhook` | `object` | No | Webhook config: `{ endpoint, events? }` |
+| `status` | `string` | No | Initial status |
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "inbox_f7a2b3c4",
+    "localPart": "support",
+    "displayName": "Acme Support",
+    "agent": { "name": "Support Agent" },
+    "webhook": {
+      "endpoint": "https://your-server.com/webhook",
+      "events": ["inbound"]
+    },
+    "domain_id": "d_abc123",
+    "domain_name": "agents.yourdomain.com",
+    "createdAt": "2026-02-14T10:00:00Z"
+  }
+}
+```
+
+### Display names
+
+When `display_name` is set, outbound emails appear as:
+
+```
+"Acme Support" <support@yourdomain.com>
+```
+
+instead of just `support@yourdomain.com`. This follows RFC 5322 and renders properly in Gmail, Outlook, and Apple Mail.
+
+---
+
+## List inboxes
+
+<CodeGroup>
+
+```typescript TypeScript
+// All inboxes across all domains
+const allInboxes = await commune.inboxes.list();
+
+// Inboxes for a specific domain
+const domainInboxes = await commune.inboxes.list('domain_id');
+```
+
+```python Python
+# All inboxes
+all_inboxes = client.inboxes.list()
+
+# Per domain
+domain_inboxes = client.inboxes.list(domain_id="domain_id")
+```
+
+```bash MCP
+list_inboxes()                    # all
+list_inboxes(domain_id="d_abc")   # per domain
+```
+
+```bash cURL
+# All inboxes
+curl "https://api.commune.email/v1/inboxes" \
+  -H "Authorization: Bearer comm_..."
+
+# Per domain
+curl "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "inbox_f7a2b3c4",
+      "localPart": "support",
+      "displayName": "Acme Support",
+      "agent": { "name": "Support Agent" },
+      "webhook": { "endpoint": "https://..." },
+      "domain_id": "d_abc123",
+      "domain_name": "agents.yourdomain.com",
+      "createdAt": "2026-02-14T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+## Get inbox details
+
+<CodeGroup>
+
+```typescript TypeScript
+const inbox = await commune.inboxes.get('domain_id', 'inbox_id');
+```
+
+```python Python
+inbox = client.inboxes.get(domain_id="domain_id", inbox_id="inbox_id")
+```
+
+```bash cURL
+curl "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+---
+
+## Update an inbox
+
+<CodeGroup>
+
+```typescript TypeScript
+const updated = await commune.inboxes.update('domain_id', 'inbox_id', {
+  webhook: {
+    endpoint: 'https://new-server.com/webhook',
+    events: ['inbound'],
+  },
+});
+```
+
+```python Python
+updated = client.inboxes.update(
+    domain_id="domain_id",
+    inbox_id="inbox_id",
+    webhook={"endpoint": "https://new-server.com/webhook"},
+)
+```
+
+```bash cURL
+curl -X PUT "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "endpoint": "https://new-server.com/webhook",
+      "events": ["inbound"]
+    }
+  }'
+```
+
+</CodeGroup>
+
+### Updatable fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `local_part` | `string` | Change the email prefix |
+| `webhook` | `object` | Update webhook config |
+| `status` | `string` | Set inbox status |
+
+---
+
+## Delete an inbox
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.remove('domain_id', 'inbox_id');
+```
+
+```python Python
+client.inboxes.remove(domain_id="domain_id", inbox_id="inbox_id")
+```
+
+```bash MCP
+delete_inbox(domain_id="domain_id", inbox_id="inbox_id")
+```
+
+```bash cURL
+curl -X DELETE "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID" \
+  -H "Authorization: Bearer comm_..."
+```
+
+</CodeGroup>
+
+<Warning>
+  Deleting an inbox is permanent. All webhook configurations are removed. Historical messages and threads remain accessible.
+</Warning>
+
+---
+
+## Set up a webhook
+
+Configure real-time notifications when emails arrive at an inbox:
+
+<CodeGroup>
+
+```typescript TypeScript
+await commune.inboxes.setWebhook('domain_id', 'inbox_id', {
+  endpoint: 'https://your-server.com/webhook/email',
+  events: ['inbound'],
+});
+```
+
+```python Python
+client.inboxes.set_webhook(
+    domain_id="domain_id",
+    inbox_id="inbox_id",
+    endpoint="https://your-server.com/webhook/email",
+)
+```
+
+```bash cURL
+curl -X PUT "https://api.commune.email/v1/domains/DOMAIN_ID/inboxes/INBOX_ID" \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhook": {
+      "endpoint": "https://your-server.com/webhook/email",
+      "events": ["inbound"]
+    }
+  }'
+```
+
+</CodeGroup>
+
+See [Webhooks](/features/webhooks) for the full payload format and delivery guarantees.
+
+---
+
+## Inbox object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Unique inbox ID |
+| `localPart` | `string` | Email prefix (before `@`) |
+| `address` | `string` | Full email address |
+| `displayName` | `string \| null` | Sender name for outbound emails |
+| `agent` | `object \| null` | Agent metadata: `{ id?, name?, metadata? }` |
+| `webhook` | `object \| null` | Webhook config: `{ endpoint, events?, secret? }` |
+| `extractionSchema` | `object \| null` | Structured extraction config |
+| `createdAt` | `string` | ISO creation timestamp |
+| `status` | `string` | Inbox status |
+
+## Limits
+
+| Tier | Max inboxes |
+|------|-------------|
+| Free | 3 |
+| Pro | 25 |
+| Business | 100 |
+| Enterprise | Unlimited |
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Send emails and list messages from your inboxes.
+</Card>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Receive real-time notifications when emails arrive.
+</Card>
+
+<Card title="Structured Extraction" icon="wand-magic-sparkles" href="/features/structured-extraction">
+  Automatically extract structured data from inbound emails.
+</Card>
+
+<Card title="Domains" icon="globe" href="/features/domains">
+  Add a custom domain for branded email addresses.
+</Card>
+
+</Columns>

@@ -1,0 +1,54 @@
+---
+title: Capability Matrix
+description: Canonical parity matrix for Commune public v1 API, SDKs, and MCP.
+---
+
+`/v1` is the canonical public API contract for developers and agents.
+
+## Matrix
+
+| Capability | `/v1` API | Node SDK (`commune-ai`) | Python SDK (`commune-mail`) | MCP (`commune-mcp`) |
+|---|---|---|---|---|
+| Domains (list/create/get/verify/records) | Yes | Yes | Yes | Yes |
+| Inboxes (list/create/get/update/remove/webhook) | Yes | Yes | Yes | Yes |
+| Structured extraction schema (set/remove) | Yes | Yes | Yes | Yes |
+| Threads list/messages | Yes | Yes | Yes | Yes |
+| Semantic thread search | Yes | Yes | Yes | Yes |
+| Thread triage (metadata/status/tags/assign) | Yes | Yes | Yes | Yes |
+| Messages send/list | Yes | Yes | Yes | Yes |
+| Attachments upload/get/url | Yes | Yes | Yes | Yes |
+| Delivery metrics/events/suppressions | Yes | Yes | Yes | Yes |
+| Webhook signature verification helpers | N/A | Yes | Yes | N/A |
+
+## Naming convention
+
+1. HTTP (`/v1`) uses `snake_case`.
+2. Node SDK uses `camelCase` public params and maps internally to `snake_case`.
+3. Python SDK uses `snake_case` directly.
+4. MCP tool args follow `snake_case` for direct API alignment.
+
+## Backward compatibility
+
+Legacy SDK calls are kept as compatibility aliases during transition and marked deprecated. New integrations should use canonical methods documented in the SDK pages.
+
+## SDK documentation
+
+<Columns cols={2}>
+
+<Card title="TypeScript SDK" icon="js" href="/sdks/typescript">
+  Full method reference and types for the Node.js SDK.
+</Card>
+
+<Card title="Python SDK" icon="python" href="/sdks/python">
+  Sync and async clients with Pydantic model reference.
+</Card>
+
+<Card title="MCP Server" icon="robot" href="/sdks/mcp">
+  All available tools for Claude Desktop, Cursor, and Windsurf.
+</Card>
+
+<Card title="REST API" icon="webhook" href="/sdks/rest-api">
+  Direct HTTP endpoint reference for all resources.
+</Card>
+
+</Columns>

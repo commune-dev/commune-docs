@@ -1,0 +1,282 @@
+---
+title: How do I add human approval before my agent sends email?
+description: Implement pre-send approval flows, queue-and-review patterns, and confidence-based routing to keep a human in the loop.
+---
+
+## The short answer
+
+Don't let your agent send directly. Route outbound emails through an approval layer — either a pre-send webhook that gates every message, a draft queue that humans review, or a confidence threshold that decides automatically. The right pattern depends on how much you trust your agent and how high the stakes are.
+
+## Why this matters
+
+Every enterprise conversation about AI agents eventually lands here. "What if it says something wrong?" is the question that blocks deployment. The answer isn't "trust the model" — it's "build a gate."
+
+Human-in-the-loop approval is not about slowing your agent down. It's about making the humans around it comfortable enough to let it run. Start strict, loosen over time as confidence builds.
+
+## Pattern 1: Pre-send webhook
+
+Your agent doesn't call `commune.messages.send()` directly. Instead, it posts the draft to your own approval endpoint. A human (or an automated policy check) approves or rejects. Only approved messages get sent.
+
+<CodeGroup>
+
+```typescript TypeScript
+// Agent prepares the email but doesn't send it
+async function agentCompose(thread: Thread): Promise<DraftEmail> {
+  const draft = await myLLM.generateReply(thread);
+  return {
+    to: thread.recipient,
+    subject: thread.subject,
+    html: draft.content,
+    thread_id: thread.id,
+    confidence: draft.confidence,
+  };
+}
+
+// Submit for approval
+async function submitForApproval(draft: DraftEmail): Promise<void> {
+  await db.drafts.insert({
+    ...draft,
+    status: 'pending_review',
+    created_at: new Date(),
+  });
+
+  // Notify reviewer (Slack, email, dashboard — whatever works)
+  await notify.slack('#agent-approvals', {
+    text: `New draft pending review`,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text: `*To:* ${draft.to}\n*Subject:* ${draft.subject}` } },
+      { type: 'actions', elements: [
+        { type: 'button', text: { type: 'plain_text', text: 'Approve' }, action_id: `approve_${draft.id}` },
+        { type: 'button', text: { type: 'plain_text', text: 'Reject' }, action_id: `reject_${draft.id}`, style: 'danger' },
+      ]},
+    ],
+  });
+}
+
+// On approval, send via Commune
+async function onApproval(draftId: string): Promise<void> {
+  const draft = await db.drafts.findById(draftId);
+  if (draft.status !== 'pending_review') return;
+
+  await commune.messages.send({
+    to: draft.to,
+    subject: draft.subject,
+    html: draft.html,
+    thread_id: draft.thread_id,
+  });
+
+  await db.drafts.update(draftId, { status: 'sent' });
+}
+```
+
+```python Python
+# Agent prepares the email but doesn't send it
+async def agent_compose(thread: Thread) -> dict:
+    draft = await my_llm.generate_reply(thread)
+    return {
+        "to": thread.recipient,
+        "subject": thread.subject,
+        "html": draft.content,
+        "thread_id": thread.id,
+        "confidence": draft.confidence,
+    }
+
+# Submit for approval
+async def submit_for_approval(draft: dict) -> None:
+    draft_id = await db.drafts.insert({
+        **draft,
+        "status": "pending_review",
+        "created_at": datetime.utcnow(),
+    })
+
+    # Notify reviewer
+    await notify_slack("#agent-approvals", {
+        "text": f"New draft pending review — To: {draft['to']}, Subject: {draft['subject']}",
+        "draft_id": draft_id,
+    })
+
+# On approval, send via Commune
+async def on_approval(draft_id: str) -> None:
+    draft = await db.drafts.find_by_id(draft_id)
+    if draft["status"] != "pending_review":
+        return
+
+    client.messages.send(
+        to=draft["to"],
+        subject=draft["subject"],
+        html=draft["html"],
+        thread_id=draft["thread_id"],
+    )
+
+    await db.drafts.update(draft_id, {"status": "sent"})
+```
+
+</CodeGroup>
+
+This is the most conservative pattern. Nothing leaves your system without a human clicking "approve." Use it when you're first deploying an agent or when emails go to high-value contacts.
+
+## Pattern 2: Confidence thresholds
+
+Your agent outputs a confidence score with every draft. High-confidence messages send automatically. Low-confidence messages go to a review queue.
+
+<CodeGroup>
+
+```typescript TypeScript
+const CONFIDENCE_THRESHOLD = 0.9;
+
+async function handleAgentDraft(draft: DraftEmail): Promise<void> {
+  if (draft.confidence >= CONFIDENCE_THRESHOLD) {
+    // Auto-send — agent is confident
+    await commune.messages.send({
+      to: draft.to,
+      subject: draft.subject,
+      html: draft.html,
+      thread_id: draft.thread_id,
+    });
+    console.log(`Auto-sent to ${draft.to} (confidence: ${draft.confidence})`);
+  } else {
+    // Queue for human review
+    await submitForApproval(draft);
+    console.log(`Queued for review (confidence: ${draft.confidence})`);
+  }
+}
+```
+
+```python Python
+CONFIDENCE_THRESHOLD = 0.9
+
+async def handle_agent_draft(draft: dict) -> None:
+    if draft["confidence"] >= CONFIDENCE_THRESHOLD:
+        # Auto-send — agent is confident
+        client.messages.send(
+            to=draft["to"],
+            subject=draft["subject"],
+            html=draft["html"],
+            thread_id=draft["thread_id"],
+        )
+        print(f"Auto-sent to {draft['to']} (confidence: {draft['confidence']})")
+    else:
+        # Queue for human review
+        await submit_for_approval(draft)
+        print(f"Queued for review (confidence: {draft['confidence']})")
+```
+
+</CodeGroup>
+
+Start with a threshold of 0.95 and lower it over time as you review the auto-sent messages and confirm quality. Track the false positive rate — how often do auto-sent messages need correction?
+
+## Pattern 3: Escalation rules
+
+Some emails should always require approval, regardless of confidence. Define rules based on recipient, content, or context.
+
+```typescript
+interface EscalationRule {
+  name: string;
+  check: (draft: DraftEmail) => boolean;
+}
+
+const ESCALATION_RULES: EscalationRule[] = [
+  {
+    name: 'c-suite-recipient',
+    check: (draft) => {
+      const cSuiteTitles = ['ceo', 'cfo', 'cto', 'coo', 'vp', 'director'];
+      const recipientTitle = draft.recipientMetadata?.title?.toLowerCase() ?? '';
+      return cSuiteTitles.some(t => recipientTitle.includes(t));
+    },
+  },
+  {
+    name: 'external-domain',
+    check: (draft) => {
+      const recipientDomain = draft.to.split('@')[1];
+      return !INTERNAL_DOMAINS.includes(recipientDomain);
+    },
+  },
+  {
+    name: 'has-attachments',
+    check: (draft) => (draft.attachments?.length ?? 0) > 0,
+  },
+  {
+    name: 'contains-pricing',
+    check: (draft) => /\$[\d,]+|pricing|quote|proposal/i.test(draft.html),
+  },
+  {
+    name: 'first-contact',
+    check: (draft) => !draft.thread_id, // No existing thread = cold outreach
+  },
+];
+
+async function routeDraft(draft: DraftEmail): Promise<void> {
+  const triggered = ESCALATION_RULES.filter(rule => rule.check(draft));
+
+  if (triggered.length > 0) {
+    console.log(`Escalation rules triggered: ${triggered.map(r => r.name).join(', ')}`);
+    await submitForApproval(draft);
+    return;
+  }
+
+  // No escalation rules triggered — use confidence threshold
+  await handleAgentDraft(draft);
+}
+```
+
+## Combining the patterns
+
+In practice, you'll use all three together. The decision tree looks like this:
+
+| Condition | Action |
+|-----------|--------|
+| Escalation rule triggered | Always queue for review |
+| Confidence < threshold | Queue for review |
+| Confidence >= threshold, no escalation | Auto-send |
+| Test mode enabled | Log but don't send |
+
+Start with everything going through review. As you build confidence in your agent, relax the rules:
+
+1. **Week 1-2:** Approve every email manually. Build a dataset of what your agent sends.
+2. **Week 3-4:** Auto-approve replies in existing threads with confidence > 0.95.
+3. **Month 2:** Auto-approve all emails except those matching escalation rules.
+4. **Ongoing:** Review escalation rules quarterly. Add new ones when you discover edge cases.
+
+## Approval queue timeout
+
+Don't let drafts sit in the queue forever. Set a TTL — if nobody reviews within 2 hours, either auto-reject or auto-send with a flag.
+
+```typescript
+// Cron job: expire stale drafts
+async function expireStaleDrafts(): Promise<void> {
+  const stale = await db.drafts.find({
+    status: 'pending_review',
+    created_at: { $lt: new Date(Date.now() - 2 * 60 * 60 * 1000) }, // 2 hours
+  });
+
+  for (const draft of stale) {
+    // Option A: Auto-reject (safer)
+    await db.drafts.update(draft.id, { status: 'expired' });
+
+    // Option B: Auto-send with audit flag (if you trust the agent)
+    // await commune.messages.send({ ...draft, metadata: { auto_approved: true } });
+  }
+}
+```
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Webhooks" icon="bolt" href="/features/webhooks">
+  Full webhook reference for building event-driven approval workflows.
+</Card>
+
+<Card title="What happens if my agent sends something wrong?" icon="circle-exclamation" href="/knowledge-base/what-if-agent-sends-wrong-email">
+  Damage control and incident response when an email goes out that shouldn't have.
+</Card>
+
+<Card title="Rate Limits" icon="gauge" href="/security/rate-limits">
+  Rate limiting as an additional safety layer to prevent burst damage.
+</Card>
+
+<Card title="Preventing Data Leakage" icon="lock" href="/knowledge-base/preventing-data-leakage">
+  Stop your agent from including sensitive data in outbound emails.
+</Card>
+
+</Columns>

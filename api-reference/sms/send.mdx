@@ -1,0 +1,176 @@
+---
+title: "Send SMS"
+api: "POST /v1/sms/send"
+description: "Send an outbound SMS or MMS from one of your Commune phone numbers."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const message = await commune.sms.send({
+  to: '+14155559999',
+  body: 'Hello from your AI agent!',
+  phone_number_id: 'pn_01abc123',
+});
+
+console.log(message.message_id);  // sms_SM...
+console.log(message.status);      // accepted
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+message = client.sms.send(
+    to="+14155559999",
+    body="Hello from your AI agent!",
+    phone_number_id="pn_01abc123",
+)
+
+print(message.message_id)  # sms_SM...
+print(message.status)      # accepted
+```
+```bash MCP
+send_sms(
+  to="+14155559999",
+  body="Hello from your AI agent!",
+  phone_number_id="pn_01abc123"
+)
+```
+```bash cURL
+curl -X POST https://api.commune.email/v1/sms/send \
+  -H "Authorization: Bearer comm_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "+14155559999",
+    "body": "Hello from your AI agent!",
+    "phone_number_id": "pn_01abc123"
+  }'
+```
+```bash CLI
+commune sms send \
+  --to "+14155559999" \
+  --body "Hello from your AI agent!"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 Created
+{
+  "data": {
+    "message_id": "sms_SMabc123def456",
+    "thread_id": "a1b2c3d4e5f6789012345678901234ab",
+    "message_sid": "SMabc123def456",
+    "status": "accepted",
+    "credits_charged": 2,
+    "segments": 1
+  }
+}
+```
+```json 400 Bad Request
+{
+  "error": "Invalid request",
+  "details": {
+    "fieldErrors": {
+      "to": ["to must be a valid E.164 phone number"]
+    }
+  }
+}
+```
+```json 402 Insufficient Credits
+{
+  "error": "insufficient_phone_credits",
+  "message": "Insufficient credits to send this message"
+}
+```
+```json 422 Recipient Suppressed
+{
+  "error": "recipient_suppressed",
+  "message": "Recipient has opted out"
+}
+```
+```json 429 Rate Limited
+{
+  "error": "rate_limit_exceeded",
+  "message": "Too many messages"
+}
+```
+</ResponseExample>
+
+## Body
+
+<ParamField body="to" type="string" required>
+  Recipient phone number in E.164 format (e.g., `+14155559999`).
+</ParamField>
+
+<ParamField body="body" type="string" required>
+  Message text. Maximum 1600 characters. SMS segments are 160 characters each (153 for multi-segment messages). Each segment costs 2 credits for US numbers.
+</ParamField>
+
+<ParamField body="phone_number_id" type="string">
+  ID of the Commune phone number to send from. Format: `pn_...`. If omitted, Commune uses the first active phone number on your account.
+</ParamField>
+
+<ParamField body="media_url" type="string[]">
+  Array of publicly accessible media URLs for MMS (maximum 10 URLs). MMS costs 5 credits per message for US numbers. MMS is supported on US and CA numbers only.
+</ParamField>
+
+<ParamField body="validity_period" type="number">
+  Message expiry in seconds. If the message is not delivered within this window, it is marked failed. Range: 1–14400 (4 hours max).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="message_id" type="string">
+      Unique message identifier. Format: `sms_SM...` (Twilio SID prefixed with `sms_`).
+    </ResponseField>
+    <ResponseField name="thread_id" type="string">
+      SHA-256 derived conversation thread ID (32 hex characters). Deterministic: same pair of phone numbers always produces the same thread ID.
+    </ResponseField>
+    <ResponseField name="message_sid" type="string">
+      Raw Twilio message SID (e.g., `SMabc123...`).
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Initial delivery status. Returns `accepted` immediately on success. Updates arrive via webhook as the message progresses through `sent` → `delivered` or `failed`.
+    </ResponseField>
+    <ResponseField name="credits_charged" type="number">
+      Credits deducted for this send. US SMS: 2 credits/segment. US MMS: 5 credits. See [Credits](/api-reference/credits/get) for country-specific rates.
+    </ResponseField>
+    <ResponseField name="segments" type="number">
+      Number of SMS segments used (1 segment = 160 chars, multi-segment = 153 chars each).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+**STOP/UNSTOP compliance:** Commune automatically handles STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, and QUIT keywords. Inbound STOP messages suppress the sender's number — subsequent outbound messages to that number are silently blocked and return a `422 recipient_suppressed` error. Inbound START, YES, or UNSTOP removes the suppression.
+</Note>
+
+<Note>
+**Rate limits:**
+- 500 messages/day per phone number
+- 2,000 messages/day total per organization
+- 20,000 messages/month per organization
+
+Exceeding these limits returns `429 rate_limit_exceeded`.
+</Note>
+
+**Credit costs by country (outbound SMS):**
+
+| Country | SMS (per segment) | MMS |
+|---------|-------------------|-----|
+| US, CA | 2 credits | 5 credits |
+| GB, AU, NZ | 8 credits | 12 credits |
+| DE, FR, ES, IT, NL, SE, NO, CH | 10 credits | 15 credits |
+| SG | 6 credits | 10 credits |
+| IN, MX | 12 credits | 18 credits |
+| BR, CO, ZA | 15 credits | 22 credits |
+| NG, SA | 20 credits | 30 credits |
+| KE | 22 credits | 33 credits |
+| AE | 18 credits | 27 credits |
+| Other | 20 credits | 30 credits |

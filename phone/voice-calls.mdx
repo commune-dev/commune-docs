@@ -1,0 +1,208 @@
+---
+title: "Voice Calls"
+description: "Initiate and manage outbound voice calls through AI-powered voice agents."
+---
+
+Commune's voice API lets your agents make and manage phone calls. Calls are powered by real-time audio streaming — the voice agent receives live audio, processes it, and responds naturally.
+
+<Note>
+Voice calling requires the **Agent Pro** plan or higher.
+</Note>
+
+## The call object
+
+```json
+{
+  "id": "call_01abc123",
+  "phoneNumberId": "pn_01abc123",
+  "voiceAgentId": "va_01abc123",
+  "callSid": "CA123abc",
+  "direction": "outbound",
+  "to": "+14155559999",
+  "from": "+14155551234",
+  "status": "completed",
+  "startedAt": "2024-01-15T12:00:00Z",
+  "answeredAt": "2024-01-15T12:00:05Z",
+  "endedAt": "2024-01-15T12:02:00Z",
+  "durationSeconds": 115,
+  "transcript": [
+    { "role": "agent", "text": "Hi, this is an automated call from Acme.", "ts": 0 },
+    { "role": "user", "text": "Yes, I'm here.", "ts": 3.2 }
+  ],
+  "toolCallLog": [
+    { "tool": "lookup_order", "args": { "order_id": "123" }, "result": { "status": "shipped" }, "ts": 8.5 }
+  ],
+  "creditsReserved": 500,
+  "creditsCharged": 383,
+  "createdAt": "2024-01-15T11:59:58Z",
+  "updatedAt": "2024-01-15T12:02:01Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique call ID |
+| `phoneNumberId` | string | The Commune number used for this call |
+| `voiceAgentId` | string | The voice agent that handled this call |
+| `callSid` | string | Carrier-level call SID |
+| `direction` | string | `inbound` or `outbound` |
+| `to` / `from` | string | E.164-formatted numbers |
+| `status` | string | `ringing`, `in-progress`, `completed`, `failed`, `busy`, `no-answer` |
+| `startedAt` | string | When the call was initiated |
+| `answeredAt` | string | When the recipient picked up |
+| `endedAt` | string | When the call ended |
+| `durationSeconds` | number | Total connected duration |
+| `transcript` | array | Turn-by-turn conversation transcript |
+| `toolCallLog` | array | All tool calls made during the call |
+| `creditsReserved` | number | Credits reserved at call start |
+| `creditsCharged` | number | Actual credits charged after the call |
+
+---
+
+## Credit costs
+
+Credits are charged per minute of connected call time. Costs vary by destination:
+
+| Route | Credits / minute |
+|-------|-----------------|
+| US outbound | 50 |
+| US inbound | 35 |
+| UK outbound | 65 |
+| Other countries | 60 |
+
+Credits are reserved upfront based on `maxDurationSeconds` and reconciled to actual usage when the call ends.
+
+---
+
+## Initiate a call
+
+Before initiating a call, the phone number must have a [voice agent configured](/phone/voice-agents).
+
+```bash
+POST /v1/calls
+```
+
+```json
+{
+  "to": "+14155559999",
+  "phoneNumberId": "pn_01abc123",
+  "maxDurationSeconds": 300,
+  "machineDetection": "Enable"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `to` | string | Yes | E.164 recipient number |
+| `phoneNumberId` | string | Yes | Your Commune phone number ID |
+| `maxDurationSeconds` | number | No | Max call length in seconds (10–3600). Defaults to voice agent setting. |
+| `machineDetection` | string | No | `Enable` or `DetectMessageEnd` — detect answering machines |
+
+**Response** `201`
+
+```json
+{
+  "data": {
+    "id": "call_01abc123",
+    "callSid": "CA123abc",
+    "status": "ringing",
+    "to": "+14155559999",
+    "from": "+14155551234",
+    "direction": "outbound",
+    "creditsReserved": 250,
+    "createdAt": "2024-01-15T12:00:00Z"
+  }
+}
+```
+
+**Error responses**
+
+| Status | Reason |
+|--------|--------|
+| `400` | No voice agent configured, or number lacks voice capability |
+| `402` | Insufficient credits for the requested duration |
+| `403` | Voice calling not available on your plan |
+| `429` | Concurrent call limit reached |
+
+---
+
+## List calls
+
+```bash
+GET /v1/calls
+```
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `phoneNumberId` | string | Filter by phone number |
+| `status` | string | Filter by call status |
+| `limit` | number | Max results (default 20, max 100) |
+| `skip` | number | Pagination offset |
+
+---
+
+## Get a call
+
+```bash
+GET /v1/calls/:id
+```
+
+Returns the full [call object](#the-call-object) including transcript and tool call log.
+
+---
+
+## Hang up a call
+
+End an active call programmatically.
+
+```bash
+POST /v1/calls/:id/hangup
+```
+
+```json
+{
+  "data": {
+    "id": "call_01abc123",
+    "status": "completed"
+  }
+}
+```
+
+Returns `400` if the call has already ended.
+
+---
+
+## Machine detection
+
+When `machineDetection` is set, Commune uses carrier-level AMD (Answering Machine Detection):
+
+- `Enable` — detects machines immediately when the call connects. The voice agent receives an `amd_status` event.
+- `DetectMessageEnd` — waits for the beep before connecting the agent, so the agent can leave a voicemail naturally.
+
+<Tip>
+For outbound sales or support calls, use `DetectMessageEnd` so your agent can leave a coherent voicemail if the call goes to voicemail.
+</Tip>
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Voice Agents" icon="microphone" href="/phone/voice-agents">
+  Configure the AI persona and system prompt for your phone number.
+</Card>
+
+<Card title="Tools" icon="wrench" href="/phone/tools">
+  Give your voice agent the ability to look up data during live calls.
+</Card>
+
+<Card title="Phone Numbers" icon="phone" href="/phone/phone-numbers">
+  Manage the numbers your voice agents run on.
+</Card>
+
+<Card title="SMS & MMS" icon="message" href="/phone/sms">
+  Add two-way text messaging alongside voice for your agents.
+</Card>
+
+</Columns>

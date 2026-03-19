@@ -1,0 +1,164 @@
+---
+title: Rate Limits
+description: Per-second, daily, and burst-based rate limits with automatic warmup and health gates.
+---
+
+Rate limits are enforced per-second, per-day, per-inbox, and per-API-key. New inboxes warm up gradually, and sending pauses automatically if bounce or complaint rates spike.
+
+## API rate limits
+
+| Tier | Requests per second | Daily email limit |
+|------|-------------------|-------------------|
+| Free | 2 req/s | 100 emails/day |
+| Pro | 10 req/s | 5,000 emails/day |
+| Business | 50 req/s | 50,000 emails/day |
+| Enterprise | Custom | Custom |
+
+When you exceed the rate limit, the API returns `429 Too Many Requests` with a `Retry-After` header indicating how many seconds to wait.
+
+```json
+{
+  "error": "Rate limit exceeded. Retry after 2 seconds."
+}
+```
+
+## Rate limit layers
+
+Commune applies rate limits at four levels, each independently enforced:
+
+### 1. Per-second rate limit
+Controls the maximum number of API requests per second per organization. Applies to all endpoints.
+
+### 2. Daily email limit
+Maximum number of outbound emails per day, per organization. Resets at midnight UTC.
+
+### 3. Inbox daily limit
+Per-inbox sending cap that limits how many emails a single inbox can send per day. This is configurable and defaults to your plan's inbox limit.
+
+### 4. API key limit
+Individual API keys can have custom daily email limits set through the dashboard. Useful for limiting automated systems independently from human-triggered sends.
+
+## Burst detection
+
+Beyond per-second rate limits, Commune monitors for abnormal sending spikes. If your sending rate suddenly increases beyond your established pattern, burst detection temporarily throttles sends to protect your domain's reputation.
+
+**How it works:**
+- Commune tracks your sending velocity over rolling windows
+- A sudden spike (e.g., 10x your normal rate) triggers burst protection
+- Sends are throttled (not rejected) until the rate normalizes
+- No permanent penalty — this is a protective measure
+
+**Why this matters:** Email providers like Gmail monitor sending patterns. A sudden spike from a domain that normally sends 50 emails/day can trigger spam filters even if the content is legitimate.
+
+## Warmup gate
+
+New inboxes start with a lower daily sending limit that gradually increases over time:
+
+| Day | Approximate daily limit |
+|-----|------------------------|
+| 1–3 | 50 emails |
+| 4–7 | 200 emails |
+| 8–14 | 500 emails |
+| 15–30 | 2,000 emails |
+| 30+ | Plan limit |
+
+This follows email industry best practices for "warming up" a new sending identity. Skipping warmup is one of the most common reasons new domains get flagged as spam.
+
+<Note>
+  Warmup limits apply per inbox, not per domain. If you create multiple inboxes, each warms up independently.
+</Note>
+
+## Sending health gate
+
+If your bounce rate or complaint rate exceeds critical thresholds, Commune automatically pauses outbound sending for the affected inbox:
+
+| Metric | Pause threshold | Resume condition |
+|--------|----------------|------------------|
+| Bounce rate | > 10% (over 24h) | Drops below 5% |
+| Complaint rate | > 0.5% (over 24h) | Drops below 0.2% |
+
+When paused, send attempts return a `403` error:
+
+```json
+{
+  "error": "Sending paused for this inbox due to high bounce rate. Check delivery metrics."
+}
+```
+
+This automatic protection prevents your domain from being blacklisted by email providers.
+
+## Handling rate limits in your code
+
+<CodeGroup>
+
+```typescript TypeScript
+async function sendWithRetry(payload, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await commune.messages.send(payload);
+    } catch (err) {
+      if (err.message.includes('Rate limit') && attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+```
+
+```python Python
+import time
+
+def send_with_retry(client, payload, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return client.messages.send(**payload)
+        except RateLimitError:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise
+```
+
+</CodeGroup>
+
+## Checking your usage
+
+Monitor your current rate limit usage through the dashboard or the delivery metrics API:
+
+```bash
+curl "https://api.commune.email/v1/delivery/metrics?inbox_id=inbox_abc&period=24h" \
+  -H "Authorization: Bearer comm_..."
+```
+
+The `sent` field in the response tells you how many emails you've sent in the period. Compare against your plan's daily limit to check headroom.
+
+## Requesting higher limits
+
+If you need higher rate limits or daily email caps:
+- **Pro/Business**: Limits can be adjusted through the dashboard billing page
+- **Enterprise**: Contact us for custom limits tailored to your sending patterns
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Delivery Monitoring" icon="chart-line" href="/features/delivery-monitoring">
+  Track sent volume, bounce rates, and suppression events.
+</Card>
+
+<Card title="Spam Prevention" icon="shield-halved" href="/security/spam-prevention">
+  Outbound content validation and inbound spam scoring.
+</Card>
+
+<Card title="Authentication" icon="key" href="/authentication">
+  Set per-key daily limits to restrict automated senders.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full picture of Commune's security and protection layers.
+</Card>
+
+</Columns>

@@ -1,0 +1,243 @@
+---
+title: "How do I send HTML emails from my agent?"
+description: "Send professional HTML emails from AI agents using the Commune SDK — templates, inline styles, and responsive design for email clients."
+---
+
+## The short answer
+
+Pass an `html` field to `messages.send()` alongside the plain `text` fallback. Email clients that support HTML will render the rich version; older clients and screen readers fall back to plain text. Always send both.
+
+## Why plain text is not enough
+
+When your agent sends a support reply, a sales follow-up, or a weekly digest, plain text looks like spam. Recipients expect formatted emails — bold text for emphasis, links that are clickable, tables for data, and a visual structure that signals "this is a real business email."
+
+Plain text also loses information. A bulleted action list becomes a wall of dashes. A table of invoice line items becomes unreadable. HTML lets your agent communicate with the same fidelity a human would.
+
+## Sending HTML with the SDK
+
+Both the TypeScript and Python SDKs accept `html` and `text` on `messages.send()`. Always provide both — `text` is the accessibility fallback and is used by spam filters to validate content consistency.
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY! });
+
+await commune.messages.send({
+  to: 'customer@example.com',
+  subject: 'Your support ticket has been resolved',
+  inboxId: 'inb_support_01',
+  text: 'Hi Alex, your ticket #4821 has been resolved. Let us know if you need anything else.',
+  html: `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <p style="font-size: 16px; color: #1a1a1a;">Hi Alex,</p>
+      <p style="font-size: 16px; color: #1a1a1a;">
+        Your support ticket <strong>#4821</strong> has been resolved.
+      </p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr style="background-color: #f5f5f5;">
+          <td style="padding: 12px; font-weight: bold;">Issue</td>
+          <td style="padding: 12px;">Login timeout on mobile</td>
+        </tr>
+        <tr>
+          <td style="padding: 12px; font-weight: bold;">Resolution</td>
+          <td style="padding: 12px;">Session token expiry extended to 30 days</td>
+        </tr>
+        <tr style="background-color: #f5f5f5;">
+          <td style="padding: 12px; font-weight: bold;">Status</td>
+          <td style="padding: 12px; color: #16a34a; font-weight: bold;">Resolved</td>
+        </tr>
+      </table>
+      <p style="font-size: 14px; color: #666;">
+        Let us know if you need anything else.
+      </p>
+    </div>
+  `,
+});
+```
+
+```python Python
+import commune
+
+client = commune.CommuneClient(api_key=os.environ["COMMUNE_API_KEY"])
+
+client.messages.send(
+    to="customer@example.com",
+    subject="Your support ticket has been resolved",
+    inbox_id="inb_support_01",
+    text="Hi Alex, your ticket #4821 has been resolved. Let us know if you need anything else.",
+    html="""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <p style="font-size: 16px; color: #1a1a1a;">Hi Alex,</p>
+      <p style="font-size: 16px; color: #1a1a1a;">
+        Your support ticket <strong>#4821</strong> has been resolved.
+      </p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr style="background-color: #f5f5f5;">
+          <td style="padding: 12px; font-weight: bold;">Issue</td>
+          <td style="padding: 12px;">Login timeout on mobile</td>
+        </tr>
+        <tr>
+          <td style="padding: 12px; font-weight: bold;">Resolution</td>
+          <td style="padding: 12px;">Session token expiry extended to 30 days</td>
+        </tr>
+        <tr style="background-color: #f5f5f5;">
+          <td style="padding: 12px; font-weight: bold;">Status</td>
+          <td style="padding: 12px; color: #16a34a; font-weight: bold;">Resolved</td>
+        </tr>
+      </table>
+      <p style="font-size: 14px; color: #666;">
+        Let us know if you need anything else.
+      </p>
+    </div>
+    """,
+)
+```
+
+</CodeGroup>
+
+## Inline styles are mandatory
+
+Email clients strip `<style>` tags. Gmail removes them entirely. Outlook ignores them. Yahoo strips them on mobile. This is the single biggest gotcha in HTML email development.
+
+Every CSS property must be applied inline via the `style` attribute:
+
+```html
+<!-- This will NOT work in most email clients -->
+<style>
+  .heading { color: #1a1a1a; font-size: 24px; }
+</style>
+<h1 class="heading">Welcome</h1>
+
+<!-- This WILL work everywhere -->
+<h1 style="color: #1a1a1a; font-size: 24px;">Welcome</h1>
+```
+
+Other rules that apply to HTML email but not to the web:
+
+| Feature | Support | Alternative |
+|---------|---------|-------------|
+| `<style>` tags | Stripped by Gmail, Yahoo | Inline `style=""` on every element |
+| Flexbox / Grid | Not supported in Outlook | Use `<table>` for layout |
+| `background-image` | Inconsistent | Use `background-color` only |
+| `<img>` with relative URLs | Broken everywhere | Always use absolute `https://` URLs |
+| Web fonts (`@font-face`) | Only Apple Mail | Use system font stacks |
+| `margin: 0 auto` on `<div>` | Not in Outlook | Wrap in `<table align="center">` |
+
+## Building a template system
+
+For agents that send recurring emails (digest reports, status updates, ticket resolutions), build a template function that your agent calls before sending. This keeps HTML out of your LLM prompts and ensures visual consistency.
+
+<CodeGroup>
+
+```typescript TypeScript
+function supportReplyHtml(params: {
+  recipientName: string;
+  ticketId: string;
+  replyBody: string;
+  agentName: string;
+}): string {
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <p style="font-size: 16px; color: #1a1a1a;">Hi ${params.recipientName},</p>
+      <div style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">
+        ${params.replyBody}
+      </div>
+      <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+      <p style="font-size: 13px; color: #999;">
+        ${params.agentName} &middot; Ticket #${params.ticketId}
+      </p>
+    </div>
+  `;
+}
+
+// In your agent logic:
+const replyBody = await llm.generate(conversationHistory);
+
+await commune.messages.send({
+  to: customerEmail,
+  subject: `Re: Ticket #${ticketId}`,
+  inboxId: supportInboxId,
+  threadId: threadId,
+  text: replyBody,
+  html: supportReplyHtml({
+    recipientName: 'Alex',
+    ticketId: '4821',
+    replyBody: replyBody.replace(/\n/g, '<br />'),
+    agentName: 'Aria (Support Agent)',
+  }),
+});
+```
+
+```python Python
+def support_reply_html(
+    recipient_name: str,
+    ticket_id: str,
+    reply_body: str,
+    agent_name: str,
+) -> str:
+    return f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <p style="font-size: 16px; color: #1a1a1a;">Hi {recipient_name},</p>
+      <div style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">
+        {reply_body}
+      </div>
+      <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+      <p style="font-size: 13px; color: #999;">
+        {agent_name} &middot; Ticket #{ticket_id}
+      </p>
+    </div>
+    """
+
+# In your agent logic:
+reply_body = llm.generate(conversation_history)
+
+client.messages.send(
+    to=customer_email,
+    subject=f"Re: Ticket #{ticket_id}",
+    inbox_id=support_inbox_id,
+    thread_id=thread_id,
+    text=reply_body,
+    html=support_reply_html(
+        recipient_name="Alex",
+        ticket_id="4821",
+        reply_body=reply_body.replace("\n", "<br />"),
+        agent_name="Aria (Support Agent)",
+    ),
+)
+```
+
+</CodeGroup>
+
+## Responsive design basics
+
+Most emails are read on mobile. Keep layouts simple and they will naturally adapt:
+
+1. **Set a max-width of 600px** on your outer container. This is the universal safe width for email.
+2. **Use a single-column layout.** Multi-column layouts break on mobile Outlook and small screens.
+3. **Set font sizes to at least 14px.** Anything smaller gets auto-zoomed on iOS, breaking your layout.
+4. **Use percentage widths for tables** (`width: 100%`) so they scale down on narrow screens.
+5. **Test with real inboxes.** Send a test email to Gmail, Outlook, and Apple Mail before going live.
+
+<Note>
+Commune's `messages.send()` does not modify your HTML. What you pass in the `html` field is exactly what gets delivered. If you want CSS inlining or responsive transformations, use a library like [juice](https://github.com/Automattic/juice) (Node.js) or [premailer](https://github.com/peterbe/premailer) (Python) before sending.
+</Note>
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Full API reference for sending emails including HTML, attachments, and threading.
+</Card>
+
+<Card title="Email Signatures for Agents" icon="signature" href="/knowledge-base/agent-email-signatures">
+  Append consistent HTML signatures to every agent email.
+</Card>
+
+<Card title="Attaching Files" icon="paperclip" href="/knowledge-base/how-to-attach-files">
+  Upload and attach files to outbound agent emails.
+</Card>
+
+</Columns>

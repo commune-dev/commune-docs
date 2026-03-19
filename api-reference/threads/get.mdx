@@ -1,0 +1,167 @@
+---
+title: "Get thread messages"
+api: "GET /v1/threads/:threadId/messages"
+description: "Get all messages in a thread, ordered chronologically."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const result = await commune.threads.get('thread_f47ac10b-58cc-4372-a567-0e02b2c3d479');
+
+for (const message of result.data) {
+  console.log(message.direction, message.content);
+}
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.threads.get("thread_f47ac10b-58cc-4372-a567-0e02b2c3d479")
+
+for message in result.data:
+    print(message.direction, message.content)
+```
+```bash MCP
+get_thread(thread_id="thread_f47ac10b-58cc-4372-a567-0e02b2c3d479")
+```
+```bash cURL
+curl "https://api.commune.email/v1/threads/thread_f47ac10b-58cc-4372-a567-0e02b2c3d479/messages" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune threads get thread_f47ac10b-58cc-4372-a567-0e02b2c3d479
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Success
+{
+  "data": [
+    {
+      "channel": "email",
+      "message_id": "49a3999c-0ce1-4ea6-ab68-e08a5c73e498",
+      "thread_id": "thread_f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "direction": "inbound",
+      "participants": [
+        { "role": "sender", "identity": "customer@example.com" },
+        { "role": "to", "identity": "support@mycompany.com" }
+      ],
+      "content": "Hi, I need help with my order.",
+      "content_html": "<p>Hi, I need help with my order.</p>",
+      "attachments": [],
+      "created_at": "2026-02-25T09:00:00.000Z",
+      "metadata": {
+        "subject": "Order help",
+        "inbox_id": "inbox_abc123",
+        "domain_id": "domain_xyz789",
+        "delivery_status": "delivered",
+        "has_attachments": false,
+        "attachment_count": 0,
+        "spam_checked": true,
+        "spam_score": 0.02,
+        "spam_action": "accept",
+        "spam_flagged": false,
+        "prompt_injection_checked": true,
+        "prompt_injection_detected": false,
+        "prompt_injection_risk": "none"
+      }
+    },
+    {
+      "channel": "email",
+      "message_id": "7b8c9d0e-1f2a-3b4c-d5e6-f7a8b9c0d1e2",
+      "thread_id": "thread_f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "direction": "outbound",
+      "participants": [
+        { "role": "sender", "identity": "support@mycompany.com" },
+        { "role": "to", "identity": "customer@example.com" }
+      ],
+      "content": "Hi! Happy to help. Your order #12345 is on its way.",
+      "content_html": "<p>Hi! Happy to help. Your order #12345 is on its way.</p>",
+      "attachments": [],
+      "created_at": "2026-02-25T10:30:00.000Z",
+      "metadata": {
+        "subject": "Re: Order help",
+        "inbox_id": "inbox_abc123",
+        "domain_id": "domain_xyz789",
+        "delivery_status": "delivered",
+        "has_attachments": false,
+        "attachment_count": 0
+      }
+    }
+  ]
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="threadId" type="string" required>
+  The thread ID. Format: `thread_<uuid>`. Obtain this from the `thread_id` field in any message or from [List threads](/api-reference/threads/list).
+</ParamField>
+
+## Query Parameters
+
+<ParamField query="limit" type="number" default="50">
+  Maximum number of messages to return. Range: 1–1000.
+</ParamField>
+
+<ParamField query="order" type="string" default="asc">
+  Sort order by `created_at`. One of: `asc` (oldest first, default for reading a conversation) or `desc` (newest first).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object[]">
+  Array of message objects in the thread, ordered by `created_at`. Each object is the full message shape — same as returned by [Get message](/api-reference/messages/get).
+
+  <Expandable title="Message object properties" defaultOpen>
+    <ResponseField name="channel" type="string">
+      Always `"email"` for email messages.
+    </ResponseField>
+    <ResponseField name="message_id" type="string">
+      Unique message identifier.
+    </ResponseField>
+    <ResponseField name="thread_id" type="string">
+      Thread this message belongs to.
+    </ResponseField>
+    <ResponseField name="direction" type="string">
+      `"inbound"` for received messages, `"outbound"` for sent messages.
+    </ResponseField>
+    <ResponseField name="participants" type="object[]">
+      <Expandable title="Participant properties">
+        <ResponseField name="role" type="string">
+          One of: `sender`, `to`, `cc`, `bcc`, `mentioned`, `participant`.
+        </ResponseField>
+        <ResponseField name="identity" type="string">
+          Email address of this participant.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="content" type="string">
+      Plain text body of the message.
+    </ResponseField>
+    <ResponseField name="content_html" type="string | null">
+      HTML body of the message.
+    </ResponseField>
+    <ResponseField name="attachments" type="string[]">
+      Attachment IDs for files attached to this message.
+    </ResponseField>
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp.
+    </ResponseField>
+    <ResponseField name="metadata" type="object">
+      Full metadata object. See [Get message](/api-reference/messages/get) for all available fields, including delivery status, spam analysis, and prompt injection detection.
+    </ResponseField>
+  </Expandable>
+</ResponseField>

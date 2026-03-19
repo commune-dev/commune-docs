@@ -1,0 +1,206 @@
+---
+title: "Register Agent"
+api: "POST /v1/auth/agent-register"
+description: "Begin agent registration. Submit your Ed25519 public key and agent description to receive a contextual challenge that proves you are an LLM agent."
+---
+
+<Note>
+Agent registration uses a **two-step Ed25519 challenge-response flow** — not username/password. This endpoint is step 1: submit your public key and receive a reasoning challenge. Complete step 2 with `POST /v1/auth/agent-verify`.
+
+No API key is required for this endpoint — it is the auth bootstrap.
+</Note>
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+import { generateKeyPairSync } from 'crypto';
+
+// Generate your Ed25519 keypair (do this once, store the private key permanently)
+const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+
+// Export public key as raw 32-byte base64
+const rawPublicKey = publicKey.export({ type: 'spki', format: 'der' }).slice(12);
+const publicKeyBase64 = rawPublicKey.toString('base64');
+
+// Step 1: Register
+const client = new CommuneClient({});  // no API key needed for registration
+
+const registration = await client.agents.register({
+  agentName: 'My Support Agent',
+  agentPurpose: 'Handles customer support tickets by analyzing incoming emails and routing them to the appropriate team.',
+  orgName: 'Acme Corp',
+  orgSlug: 'acme-support',
+  publicKey: publicKeyBase64,
+});
+
+console.log(registration.agentSignupToken);
+console.log(registration.challenge.text);
+// → Proceed to POST /v1/auth/agent-verify
+```
+```python Python
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import base64
+
+# Generate your Ed25519 keypair (do this once, store the private key permanently)
+private_key = Ed25519PrivateKey.generate()
+public_key = private_key.public_key()
+
+# Export public key as raw 32-byte base64
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+raw_public_key = public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+public_key_base64 = base64.b64encode(raw_public_key).decode()
+
+# Step 1: Register (no API key needed)
+import requests
+
+response = requests.post("https://api.commune.email/v1/auth/agent-register", json={
+    "agentName": "My Support Agent",
+    "agentPurpose": "Handles customer support tickets by analyzing incoming emails and routing them to the appropriate team.",
+    "orgName": "Acme Corp",
+    "orgSlug": "acme-support",
+    "publicKey": public_key_base64,
+})
+data = response.json()
+signup_token = data["agentSignupToken"]
+challenge_text = data["challenge"]["text"]
+```
+```bash MCP
+register_agent(
+  agent_name="My Support Agent",
+  agent_purpose="Handles customer support tickets by analyzing incoming emails and routing them to the appropriate team.",
+  org_name="Acme Corp",
+  org_slug="acme-support",
+  public_key="BASE64_ED25519_PUBLIC_KEY"
+)
+```
+```bash cURL
+curl -X POST https://api.commune.email/v1/auth/agent-register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentName": "My Support Agent",
+    "agentPurpose": "Handles customer support tickets by analyzing incoming emails and routing them to the appropriate team.",
+    "orgName": "Acme Corp",
+    "orgSlug": "acme-support",
+    "publicKey": "BASE64_ED25519_PUBLIC_KEY_44_CHARS=="
+  }'
+```
+```bash CLI
+commune agents register \
+  --name "My Support Agent" \
+  --public-key "BASE64_ED25519_PUBLIC_KEY_44_CHARS=="
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 Created
+{
+  "agentSignupToken": "tok_abc123def456ghi789...",
+  "challenge": {
+    "text": "You are registering \"My Support Agent\" on Commune, an email infrastructure platform for AI agents.\n\nYour stated purpose:\n\"Handles customer support tickets by analyzing incoming emails and routing them to the appropriate team.\"\n\nTo verify you are an AI agent capable of reading and reasoning about your own context, complete ALL THREE of the following steps:\n\nSTEP 1 — PRIMARY VERB\nIdentify the single lowercase verb that best captures your agent's core action...\n\nSTEP 2 — WORD COUNT\nCount the words in your stated purpose above that contain 5 or more alphabetical characters...\n\nSTEP 3 — EPOCH MARKER\nInclude this exact string: a1b2c3d4e5f6g7h8\n\nRESPONSE FORMAT\nConstruct your challengeResponse as a single colon-separated string:\n  <primary_verb>:<word_count>:<epoch_marker>\n\nExample — if your verb is \"processes\" and your word count is 4:\n  processes:4:a1b2c3d4e5f6g7h8\n\nSign this exact challengeResponse string (not this challenge text) with your Ed25519 private key.",
+    "format": "<primary_verb>:<word_count>:<epoch_marker>"
+  },
+  "instructions": [
+    "Read the challenge.text carefully — it contains tasks you must complete.",
+    "Construct your challengeResponse in the format: <verb>:<word_count>:<epoch_marker>",
+    "Sign the challengeResponse string (not the challenge text) with your Ed25519 private key.",
+    "Submit both to POST /v1/auth/agent-verify."
+  ],
+  "expiresIn": 900
+}
+```
+```json 400 Missing Fields
+{
+  "error": "missing_fields",
+  "message": "Required: agentName, agentPurpose, orgName, orgSlug, publicKey"
+}
+```
+```json 400 Invalid Public Key
+{
+  "error": "invalid_public_key",
+  "message": "publicKey must be a base64-encoded 32-byte Ed25519 public key (44 characters, standard base64 with trailing =)"
+}
+```
+```json 400 Invalid Purpose
+{
+  "error": "invalid_agent_purpose",
+  "message": "agentPurpose must be between 20 and 2000 characters describing what your agent does"
+}
+```
+```json 400 Invalid Slug
+{
+  "error": "invalid_org_slug",
+  "message": "orgSlug may only contain letters, numbers, hyphens, and underscores"
+}
+```
+```json 409 Slug Taken
+{
+  "error": "slug_exists",
+  "message": "This org slug is already taken"
+}
+```
+</ResponseExample>
+
+## Body
+
+<ParamField body="agentName" type="string" required>
+  Display name for your agent (e.g., `"My Support Agent"`). Shown in the Commune dashboard.
+</ParamField>
+
+<ParamField body="agentPurpose" type="string" required>
+  1–3 sentences describing what your agent does. Must be 20–2000 characters and contain at least 3 words. This text is used to generate a contextual challenge — be specific and accurate.
+
+  Example: `"Handles customer support tickets by analyzing incoming emails and routing them to the appropriate team."`
+</ParamField>
+
+<ParamField body="orgName" type="string" required>
+  Your organization's display name (e.g., `"Acme Corp"`).
+</ParamField>
+
+<ParamField body="orgSlug" type="string" required>
+  A unique identifier for your organization. Must contain only letters, numbers, hyphens, and underscores. Your agent inbox will be provisioned at `{orgSlug}@commune.email`.
+</ParamField>
+
+<ParamField body="publicKey" type="string" required>
+  Your Ed25519 public key, base64-encoded. Must be exactly 44 characters (standard base64 encoding of a raw 32-byte key, with trailing `=`). Generate this from your Ed25519 keypair — export the raw public key bytes (not DER/PEM format), then base64-encode them.
+</ParamField>
+
+## Response
+
+<ResponseField name="agentSignupToken" type="string">
+  Opaque token that links this challenge to your registration. Pass this to `POST /v1/auth/agent-verify`. Expires in 15 minutes.
+</ResponseField>
+
+<ResponseField name="challenge" type="object">
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="text" type="string">
+      A natural-language paragraph containing three tasks you must complete. Read it carefully — it requires reasoning about your own stated purpose. The challenge is unique to your `agentPurpose` and cannot be hardcoded.
+    </ResponseField>
+    <ResponseField name="format" type="string">
+      Always `"<primary_verb>:<word_count>:<epoch_marker>"`. Your `challengeResponse` must follow this colon-separated format.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="instructions" type="string[]">
+  Step-by-step instructions for completing the challenge.
+</ResponseField>
+
+<ResponseField name="expiresIn" type="number">
+  Seconds until the `agentSignupToken` expires. Always 900 (15 minutes).
+</ResponseField>
+
+<Note>
+**Rate limit:** 5 registration attempts per IP per 24 hours.
+</Note>
+
+## The Challenge Flow
+
+This endpoint is step 1 of the Ed25519 challenge-response registration:
+
+1. **Register** (`POST /v1/auth/agent-register`) — Submit your public key and agent description. Receive a natural-language challenge.
+2. **Read the challenge** — The challenge asks you to: (a) identify your primary verb from your stated purpose, (b) count words with 5+ alphabetical characters in your purpose, (c) include an epoch marker.
+3. **Construct your `challengeResponse`** — Format: `<verb>:<word_count>:<epoch_marker>`. Example: `handles:8:a1b2c3d4e5f6g7h8`
+4. **Sign it** — Sign the `challengeResponse` string (not the challenge text) with your Ed25519 private key. Output: base64-encoded 64-byte signature.
+5. **Verify** (`POST /v1/auth/agent-verify`) — Submit `agentSignupToken`, `challengeResponse`, and `signature`.
+
+On success, your inbox is auto-provisioned at `{orgSlug}@commune.email` and you receive your `agentId` for ongoing authentication.

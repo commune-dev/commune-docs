@@ -1,0 +1,169 @@
+---
+title: "Knowledge Base"
+description: "Answers to common questions about AI agent email infrastructure — from getting started to deliverability, threading, security, and framework integrations."
+---
+
+Find answers to common questions about building email-enabled AI agents with Commune. Browse by topic or use search to find specific answers.
+
+<Note>
+  Building something and need help? Reach out at [support@commune.email](mailto:support@commune.email) or open a [GitHub issue](https://github.com/shanjairaj7/commune/issues).
+</Note>
+
+---
+
+## Getting Started
+
+Everything you need to go from zero to a working agent inbox in minutes.
+
+<Columns cols={2}>
+  <Card title="How do I give my AI agent an email address?" icon="inbox" href="/knowledge-base/how-do-i-give-my-agent-an-email-address">
+    Create an inbox with one API call. No domain setup required to start.
+  </Card>
+  <Card title="Do AI agents need their own email infrastructure?" icon="server" href="/knowledge-base/do-agents-need-own-email-infrastructure">
+    Why shared ESP accounts break for autonomous agents and what agent-native email solves.
+  </Card>
+  <Card title="Can I send email without a custom domain?" icon="globe" href="/knowledge-base/sending-without-custom-domain">
+    Use the shared commune.email domain to get started instantly — add a custom domain later.
+  </Card>
+  <Card title="Can I connect my agent to my existing Gmail or Outlook?" icon="envelope" href="/knowledge-base/connecting-existing-email">
+    Use Commune OAuth to connect existing email accounts — your agent reads and sends via the Commune API.
+  </Card>
+  <Card title="How do I test my agent's email before going live?" icon="flask" href="/knowledge-base/testing-agent-email">
+    Test inboxes, webhook inspection, end-to-end test patterns, and CI/CD integration.
+  </Card>
+  <Card title="What are Commune's plans and pricing?" icon="credit-card" href="/knowledge-base/pricing">
+    Free, Agent Pro, Business, and Enterprise — what's included in each.
+  </Card>
+</Columns>
+
+---
+
+## Sending & Composing
+
+Format, attach, sign, and deduplicate your agent's outbound emails.
+
+<Columns cols={2}>
+  <Card title="How do I send HTML emails from my agent?" icon="code" href="/knowledge-base/how-to-send-html-emails">
+    Inline styles, responsive templates, and why email clients strip your stylesheet.
+  </Card>
+  <Card title="How do I attach files to agent emails?" icon="paperclip" href="/knowledge-base/how-to-attach-files">
+    Upload-then-send workflow, size limits, and parsing inbound attachments.
+  </Card>
+  <Card title="How do I set up email signatures?" icon="signature" href="/knowledge-base/agent-email-signatures">
+    Consistent agent signatures with AI disclosure, company info, and legal compliance.
+  </Card>
+  <Card title="How do I prevent duplicate sends?" icon="clone" href="/knowledge-base/preventing-duplicate-sends">
+    Idempotency keys, dedup patterns, and loop guards for autonomous agents.
+  </Card>
+</Columns>
+
+---
+
+## Deliverability
+
+Keep your sender reputation healthy and your emails out of spam.
+
+<Columns cols={2}>
+  <Card title="How do I prevent my agent's emails from landing in spam?" icon="shield-check" href="/knowledge-base/how-to-prevent-agent-emails-from-spam">
+    DKIM, SPF, DMARC, bounce rates, and how Commune handles authentication automatically.
+  </Card>
+  <Card title="How do I warm up a new domain?" icon="fire" href="/knowledge-base/how-to-warm-up-domain">
+    Ramp from 50 to 5,000 emails/day over 14 days. Commune manages this automatically.
+  </Card>
+  <Card title="What happens if my agent sends too many emails?" icon="gauge-high" href="/knowledge-base/what-happens-if-agent-sends-too-many-emails">
+    Rate limits, burst detection, and how Commune protects your sender reputation.
+  </Card>
+  <Card title="How do I send emails in bulk from an agent?" icon="envelopes-bulk" href="/knowledge-base/batch-email-agents">
+    Controlled send loops, warmup limits, and per-send error handling for high-volume agents.
+  </Card>
+</Columns>
+
+---
+
+## Inbound & Threading
+
+Receive, route, and reply to emails inside your agent — in the same conversation thread.
+
+<Columns cols={2}>
+  <Card title="How do I handle email replies in my agent?" icon="reply" href="/knowledge-base/how-to-handle-email-replies">
+    Configure webhooks to receive inbound emails, resolve threads, and reply in context.
+  </Card>
+  <Card title="How does Commune thread emails?" icon="comments" href="/knowledge-base/how-does-commune-thread-emails">
+    RFC 5322 threading with real SMTP Message-IDs, routing tokens, and subject-line fallback.
+  </Card>
+  <Card title="How do I extract structured data from emails?" icon="code" href="/knowledge-base/how-to-extract-structured-data">
+    Configure a JSON schema on an inbox to automatically extract fields from every inbound email.
+  </Card>
+  <Card title="How do I set up per-agent inboxes?" icon="users" href="/knowledge-base/per-agent-inboxes-multi-agent">
+    One inbox per agent or campaign for reputation isolation and deterministic reply routing.
+  </Card>
+  <Card title="How do I route emails between multiple agents?" icon="share-nodes" href="/knowledge-base/routing-between-agents">
+    Triage patterns, internal forwarding, and escalation to humans with full thread context.
+  </Card>
+</Columns>
+
+---
+
+## Operations
+
+Monitor, audit, and debug your agents in production.
+
+<Columns cols={2}>
+  <Card title="How do I monitor what my agents are sending?" icon="chart-line" href="/knowledge-base/monitoring-agent-email">
+    Delivery metrics, webhook lifecycle events, alerting, and audit logging patterns.
+  </Card>
+</Columns>
+
+---
+
+## Security
+
+Protect your agents from adversarial input and authenticate them without human intervention.
+
+<Columns cols={2}>
+  <Card title="What is prompt injection via email?" icon="triangle-exclamation" href="/knowledge-base/what-is-prompt-injection-via-email">
+    How attackers embed LLM instructions in email bodies, and how Commune detects and scores them.
+  </Card>
+  <Card title="What is agent authentication?" icon="key" href="/knowledge-base/what-is-agent-authentication">
+    Ed25519 challenge-response auth lets agents register and authenticate fully autonomously.
+  </Card>
+  <Card title="How do I add human approval before sending?" icon="user-check" href="/knowledge-base/human-in-the-loop-approval">
+    Pre-send webhooks, draft queues, confidence thresholds, and escalation rules.
+  </Card>
+  <Card title="How do I prevent data leakage?" icon="lock" href="/knowledge-base/preventing-data-leakage">
+    Output sanitization, domain allowlists, content policies, and audit logging.
+  </Card>
+  <Card title="How do I comply with CAN-SPAM and GDPR?" icon="scale-balanced" href="/knowledge-base/compliance-can-spam-gdpr">
+    Legal requirements for AI agent email — unsubscribe headers, consent, data deletion.
+  </Card>
+  <Card title="What if my agent sends something wrong?" icon="circle-exclamation" href="/knowledge-base/what-if-agent-sends-wrong-email">
+    Damage control, incident response playbook, and prevention strategies.
+  </Card>
+</Columns>
+
+---
+
+## Framework Integrations
+
+Add email capabilities to your agent in the framework you're already using.
+
+<Columns cols={2}>
+  <Card title="Commune MCP Server" icon="plug" href="/SDKs/mcp">
+    Connect any MCP-compatible agent (Claude, Cursor, Windsurf) to Commune via the Model Context Protocol.
+  </Card>
+  <Card title="Commune on ClawHub" icon="paw" href="https://clawhub.ai/shanjairaj7/commune">
+    Install Commune as a ClawHub skill to give any OpenClaw agent full email capabilities.
+  </Card>
+  <Card title="Commune + LangChain" icon="link-chain" href="/knowledge-base/commune-with-langchain">
+    Custom LangChain tools wrapping the Commune SDK for send, receive, and thread management.
+  </Card>
+  <Card title="Commune + OpenAI Agents SDK" icon="robot" href="/knowledge-base/commune-with-openai-agents">
+    Add Commune as @function_tool in the OpenAI Agents SDK.
+  </Card>
+  <Card title="Commune + CrewAI" icon="users-gear" href="/knowledge-base/commune-with-crewai">
+    BaseTool subclasses for CrewAI agents — send email, read threads, handle inbound.
+  </Card>
+  <Card title="Commune + n8n" icon="diagram-project" href="/knowledge-base/commune-with-n8n">
+    HTTP Request + Webhook nodes for no-code agent email workflows.
+  </Card>
+</Columns>

@@ -1,0 +1,263 @@
+---
+title: Coding Agents
+description: Give Cursor, Claude Code, Windsurf, and Codex email capabilities via the Commune MCP server.
+---
+
+## Why give coding agents email?
+
+AI coding agents like Cursor, Claude Code, Windsurf, and OpenAI Codex can use email to:
+
+- Send deployment notifications and CI/CD status updates
+- Receive webhook payloads and error reports via email
+- Send code review summaries to team members
+- Handle verification emails during automated setups
+- Manage customer support threads programmatically
+
+## MCP Server (recommended)
+
+The Commune MCP server gives your coding agent direct access to email tools. Works with any agent that supports the [Model Context Protocol](https://modelcontextprotocol.io).
+
+```bash
+# Install globally
+pip install commune-mcp
+
+# Or run directly with uvx (no install needed)
+uvx commune-mcp
+```
+
+<Tabs>
+
+<Tab title="Cursor">
+
+Add to `.cursor/mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_your_api_key"
+      }
+    }
+  }
+}
+```
+
+After adding this config, restart Cursor. The agent will have access to email tools like `send_email`, `list_threads`, `search_threads`.
+
+<Tip>
+  You can also configure MCP servers via **Cursor Settings → MCP → Add Server**.
+</Tip>
+
+</Tab>
+
+<Tab title="Claude Code">
+
+Run in your terminal:
+
+```bash
+claude mcp add commune -- uvx commune-mcp
+```
+
+Then set the environment variable:
+
+```bash
+export COMMUNE_API_KEY="comm_your_api_key"
+```
+
+Or add to `~/.claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_your_api_key"
+      }
+    }
+  }
+}
+```
+
+Claude Code will discover the MCP tools automatically and can send/receive emails during coding sessions.
+
+</Tab>
+
+<Tab title="Windsurf">
+
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_your_api_key"
+      }
+    }
+  }
+}
+```
+
+</Tab>
+
+<Tab title="OpenAI Codex">
+
+Add to your Codex config (`~/.codex/config.json` or project `.codex/config.json`):
+
+```json
+{
+  "mcpServers": {
+    "commune": {
+      "command": "uvx",
+      "args": ["commune-mcp"],
+      "env": {
+        "COMMUNE_API_KEY": "comm_your_api_key"
+      }
+    }
+  }
+}
+```
+
+</Tab>
+
+</Tabs>
+
+---
+
+## Direct SDK usage
+
+If your agent doesn't support MCP, use the SDK directly:
+
+<CodeGroup>
+
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({
+  apiKey: process.env.COMMUNE_API_KEY!,
+});
+
+// Send a deployment notification
+await commune.messages.send({
+  inbox_id: 'your_inbox_id',
+  to: ['team@example.com'],
+  subject: 'Deployment Complete',
+  text: 'v2.1.0 deployed successfully to production.',
+});
+
+// List recent threads
+const threads = await commune.threads.list({
+  inbox_id: 'your_inbox_id',
+  limit: 10,
+});
+```
+
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient(api_key="comm_your_api_key")
+
+# Send a deployment notification
+client.messages.send(
+    inbox_id="your_inbox_id",
+    to="team@example.com",
+    subject="Deployment Complete",
+    text="v2.1.0 deployed successfully to production.",
+)
+
+# List recent threads
+threads = client.threads.list(inbox_id="your_inbox_id", limit=10)
+```
+
+```bash cURL
+# Send a deployment notification
+curl -X POST https://api.commune.email/v1/messages/send \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inbox_id": "your_inbox_id",
+    "to": ["team@example.com"],
+    "subject": "Deployment Complete",
+    "text": "v2.1.0 deployed successfully to production."
+  }'
+
+# List recent threads
+curl https://api.commune.email/v1/inboxes/your_inbox_id/threads \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+</CodeGroup>
+
+---
+
+## MCP tools available
+
+Once the MCP server is connected, your coding agent has access to these tools:
+
+| Tool | Description |
+|------|-------------|
+| `send_email` | Send an email from your inbox |
+| `list_threads` | List conversation threads |
+| `get_thread_messages` | Get all messages in a thread |
+| `search_threads` | Search threads by content (vector + regex) |
+| `create_inbox` | Create a new email inbox |
+| `list_inboxes` | List all your inboxes |
+| `list_domains` | List your verified domains |
+| `create_domain` | Register a custom domain |
+| `verify_domain` | Verify DNS records for a domain |
+| `get_thread_metadata` | Get thread tags, status, and assignment |
+| `set_thread_status` | Update thread status (open, waiting, closed) |
+| `tag_thread` | Add tags to a thread |
+| `untag_thread` | Remove tags from a thread |
+| `assign_thread` | Assign a thread to an agent or person |
+| `upload_attachment` | Upload a file attachment |
+| `get_attachment_url` | Get a download URL for an attachment |
+| `get_deliverability_stats` | Check bounce rates, complaints, delivery health |
+| `get_suppressions` | List suppressed email addresses |
+| `get_delivery_events` | View delivery event timeline |
+
+---
+
+## Example conversations
+
+Once configured, you can ask your coding agent things like:
+
+```
+"Create an inbox called deploy-bot and send a test email to me@example.com"
+
+"Check my inbox for any emails about the production outage"
+
+"Reply to that thread saying the fix has been deployed"
+
+"Search my threads for anything mentioning 'invoice' in the last week"
+
+"What's my current email deliverability rate?"
+```
+
+The agent will use the appropriate MCP tools to handle each request.
+
+---
+
+## Resources
+
+<Columns cols={2}>
+  <Card title="MCP Server" icon="server" href="/sdks/mcp">
+    Full MCP server documentation and all available tools
+  </Card>
+  <Card title="TypeScript SDK" icon="js" href="/sdks/typescript">
+    TypeScript SDK reference
+  </Card>
+  <Card title="Python SDK" icon="python" href="/sdks/python">
+    Python SDK reference
+  </Card>
+  <Card title="Messages API" icon="paper-plane" href="/features/messages">
+    Sending and listing messages
+  </Card>
+</Columns>

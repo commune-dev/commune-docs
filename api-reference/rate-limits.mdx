@@ -1,0 +1,103 @@
+---
+title: "Rate Limits"
+description: "Commune enforces per-organization rate limits on email sending, inbox creation, and domain management. SMS has its own separate limits."
+---
+
+## Email sending limits
+
+Rate limits are enforced per organization and scale with your plan. Enterprise organizations are exempt from all email rate limits.
+
+| Plan | Emails / hour | Emails / day | Emails / inbox / day |
+| --- | --- | --- | --- |
+| Free | 10 | 50 | 20 |
+| Agent Pro | 200 | 1,000 | 100 |
+| Business | 1,000 | 5,000 | 500 |
+| Enterprise | Unlimited | Unlimited | Unlimited |
+
+Additionally, outbound send operations are subject to a **burst limit**:
+
+- Max 15 emails per 10 seconds per organization
+- Max 50 emails per 60 seconds per organization
+
+Burst limits apply on all plans including Enterprise and cannot be exceeded regardless of tier.
+
+## Resource creation limits
+
+| Plan | Inboxes / day | Domains / day | Max inboxes | Max custom domains |
+| --- | --- | --- | --- | --- |
+| Free | 2 | 0 | 2 | 0 |
+| Agent Pro | 10 | 3 | 25 | 3 |
+| Business | 25 | 5 | 100 | 10 |
+| Enterprise | 50 | 10 | Unlimited | Unlimited |
+
+## Rate limit headers
+
+Every API response includes rate limit headers so you can track consumption without polling:
+
+| Header | Description |
+| --- | --- |
+| `X-RateLimit-Limit-Hour` | Maximum emails allowed in the current 1-hour window |
+| `X-RateLimit-Remaining-Hour` | Emails remaining in the current 1-hour window |
+| `X-RateLimit-Reset-Hour` | Unix timestamp (seconds) when the hourly window resets |
+| `X-RateLimit-Limit-Day` | Maximum emails allowed in the current 24-hour window |
+| `X-RateLimit-Remaining-Day` | Emails remaining in the current 24-hour window |
+| `X-RateLimit-Reset-Day` | Unix timestamp (seconds) when the daily window resets |
+| `Retry-After` | Present on 429 responses. Seconds to wait before retrying. |
+
+## SMS rate limits
+
+<Note>
+  SMS rate limits are enforced separately from API request rate limits. You can be within your email sending limits and still hit an SMS limit.
+</Note>
+
+SMS limits are enforced at multiple levels:
+
+| Limit | Value |
+| --- | --- |
+| Per destination number | 1 message / second |
+| Per Commune phone number | 500 messages / day |
+| Per account | 2,000 messages / day |
+| Per account | 20,000 messages / month |
+
+These limits reflect carrier constraints (Twilio Messaging Service) and apply regardless of plan tier. Exceeding any SMS limit returns `429` with error `rate_limit_exceeded`.
+
+## Handling 429 responses
+
+When you receive a 429, inspect the `Retry-After` header and the `retryAfter` field in the response body. Both are in seconds.
+
+```typescript
+import Commune from 'commune-ai';
+
+const client = new Commune({ apiKey: process.env.COMMUNE_API_KEY });
+
+async function sendWithBackoff(payload: Parameters<typeof client.messages.send>[0]) {
+  const maxAttempts = 5;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await client.messages.send(payload);
+    } catch (err: any) {
+      if (err.error !== 'rate_limit_exceeded' || attempt === maxAttempts) {
+        throw err;
+      }
+
+      // Honor the Retry-After value from the API
+      const waitMs = (err.retryAfter ?? 60) * 1000;
+      console.warn(`Rate limited. Waiting ${waitMs / 1000}s before retry ${attempt + 1}/${maxAttempts}`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+```
+
+## Best practices
+
+**Queue high-volume sends.** If you need to send more than a few hundred emails at once, queue them and dispatch at a controlled rate rather than hammering the API and hitting limits.
+
+**Track remaining capacity.** Read `X-RateLimit-Remaining-Hour` and `X-RateLimit-Remaining-Day` headers on each response. Slow down proactively when remaining drops below 10% rather than waiting for a 429.
+
+**Separate SMS from email logic.** SMS rate limiting is per-destination and per-phone-number. Structure your SMS dispatch so messages to the same recipient are spaced at least 1 second apart.
+
+**Enterprise bypass.** Enterprise organizations skip email send rate limiting entirely. If you are approaching the Business tier limits consistently, contact us to discuss Enterprise.
+
+[Back to errors →](/api-reference/errors)

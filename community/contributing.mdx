@@ -1,0 +1,245 @@
+---
+title: Contributing
+description: Help build the future of AI email infrastructure. Contribute code, report issues, or improve documentation.
+---
+
+## Welcome Contributors
+
+Commune is source available and we welcome contributions from the community. Whether you're fixing bugs, adding features, improving documentation, or helping other users, your contributions make Commune better for everyone.
+
+## License Information
+
+Commune backend is licensed under **Business Source License 1.1 (BSL)**, which allows:
+
+✅ **Non-production use** - Development, testing, and experimentation  
+✅ **Internal use** - Use within your own organization  
+✅ **Embedded use** - As part of a larger application that isn't competitive  
+✅ **Educational use** - Study and learn from the code  
+✅ **Contributions** - Submit pull requests and help improve the platform  
+
+❌ **Competitive hosting** - Cannot offer as a hosted email API service competing with Commune's paid services  
+
+After 4 years, each version converts to Apache 2.0 license. For full details, see [backend/LICENSE.md](https://github.com/shanjairaj7/commune/blob/main/backend/LICENSE.md).
+
+## Ways to Contribute
+
+### Report Issues
+Found a bug or have a feature request? [Open an issue on GitHub](https://github.com/shanjairaj7/commune/issues).
+
+**When reporting bugs, include:**
+- Clear description of the issue
+- Steps to reproduce
+- Expected vs actual behavior
+- Environment details (Node.js version, OS, etc.)
+- Relevant logs or error messages
+
+### Submit Pull Requests
+Ready to contribute code? We'd love to review your PR!
+
+**Before submitting:**
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Write or update tests
+5. Ensure all tests pass
+6. Commit with clear messages
+7. Push to your fork
+8. Open a Pull Request
+
+### Improve Documentation
+Documentation improvements are always welcome! Fix typos, clarify explanations, or add examples.
+
+### Help Other Users
+Answer questions in [GitHub Discussions](https://github.com/shanjairaj7/commune/discussions) or help triage issues.
+
+## Development Setup
+
+### Prerequisites
+- Node.js 18+ and npm
+- MongoDB (local or cloud)
+- Redis (optional, for caching)
+- Git
+
+### Clone and Install
+
+```bash
+# Clone the repository
+git clone https://github.com/shanjairaj7/commune.git
+cd commune
+
+# Install backend dependencies
+cd backend
+npm install
+
+# Install frontend dependencies
+cd ../frontend
+npm install
+
+# Install SDK dependencies
+cd ../sdk
+npm install
+
+# Install Python SDK dependencies
+cd ../commune-python
+pip install -e .
+
+# Install MCP server dependencies
+cd ../commune-mcp
+pip install -e .
+```
+
+### Environment Setup
+
+Create `.env` files in the backend directory:
+
+```bash
+# backend/.env
+MONGO_URL=mongodb://localhost:27017/commune
+JWT_SECRET=your-jwt-secret-here
+PORT=3000
+
+# Optional
+REDIS_URL=redis://localhost:6379
+EMAIL_ENCRYPTION_KEY=64-char-hex-string
+```
+
+### Run Locally
+
+```bash
+# Start backend (from backend directory)
+npm run dev
+
+# Start frontend (from frontend directory)
+npm run dev
+
+# Backend runs on http://localhost:3000
+# Frontend runs on http://localhost:3001
+```
+
+## Project Structure
+
+```
+commune/
+├── backend/          # Express API server
+│   ├── src/
+│   │   ├── routes/   # API endpoints
+│   │   ├── services/ # Business logic
+│   │   ├── stores/   # Database layer
+│   │   └── lib/      # Utilities
+│   └── docs/         # Backend documentation
+├── frontend/         # Next.js dashboard
+│   └── src/
+│       ├── app/      # App router pages
+│       └── components/
+├── sdk/              # TypeScript SDK
+├── commune-python/   # Python SDK
+├── commune-mcp/      # MCP server
+└── docs/             # Documentation site
+```
+
+## Coding Standards
+
+### TypeScript/JavaScript
+- Use TypeScript for type safety
+- Follow existing code style
+- Run `npm run lint` before committing
+- Add JSDoc comments for public APIs
+
+### Python
+- Follow PEP 8 style guide
+- Use type hints
+- Run `black` for formatting
+- Add docstrings for public functions
+
+### Commit Messages
+Use clear, descriptive commit messages:
+
+```
+feat: add webhook retry mechanism
+fix: resolve thread resolution bug
+docs: update authentication guide
+test: add email validation tests
+```
+
+## Testing
+
+### Backend Tests
+```bash
+cd backend
+npm test
+```
+
+### SDK Tests
+```bash
+cd sdk
+npm test
+```
+
+### Python SDK Tests
+```bash
+cd commune-python
+pytest
+```
+
+## Code Review Process
+
+1. **Automated checks** run on every PR (tests, linting, type checking)
+2. **Maintainer review** — we'll review your code and provide feedback
+3. **Iterate** — address feedback and push updates
+4. **Merge** — once approved, we'll merge your PR
+
+## Architecture Overview
+
+### Backend
+- **Express.js** REST API
+- **MongoDB** for data storage
+- **Redis** for caching and rate limiting
+- **Resend** for email delivery
+
+### Key Services
+- `emailService.ts` — Core email sending/receiving logic
+- `messageStore.ts` — Message and thread persistence
+- `webhookDeliveryService.ts` — Reliable webhook delivery
+
+### Security Layers
+- Rate limiting (Redis-backed)
+- Email validation (MX lookup, disposable detection)
+- Content scanning (spam, prompt injection)
+- Encryption at rest (AES-256-GCM)
+
+## Good First Issues
+
+Look for issues tagged with `good first issue` on GitHub. These are beginner-friendly tasks that help you get familiar with the codebase.
+
+## Community Guidelines
+
+- **Be respectful** — treat everyone with kindness
+- **Be constructive** — provide helpful feedback
+- **Be patient** — maintainers review PRs as time allows
+- **Ask questions** — we're here to help!
+
+## License
+
+Commune backend is licensed under Business Source License 1.1 (BSL). By contributing, you agree that your contributions will be licensed under the same BSL terms. After 4 years, contributions become available under Apache 2.0 license.
+
+## Connect with us
+
+<Columns cols={2}>
+
+<Card title="GitHub" icon="github" href="https://github.com/shanjairaj7/commune">
+  Source code, issues, and pull requests.
+</Card>
+
+<Card title="Twitter / X" icon="x-twitter" href="https://x.com/shanjai_raj">
+  Follow for updates, launches, and product announcements.
+</Card>
+
+<Card title="GitHub Discussions" icon="comments" href="https://github.com/shanjairaj7/commune/discussions">
+  Ask questions and share ideas with the community.
+</Card>
+
+<Card title="Email Support" icon="envelope" href="mailto:support@commune.email">
+  support@commune.email — for bugs, questions, or partnership inquiries.
+</Card>
+
+</Columns>

@@ -1,0 +1,450 @@
+---
+title: Agent Authentication
+description: The Commune Agent Signing Standard — how AI agents register with and authenticate to Commune using Ed25519 public-key cryptography, without a human in the loop.
+---
+
+## The Commune Agent Signing Standard
+
+Commune defines a protocol for AI agents to establish identity and authenticate with a web service entirely on their own — no browser, no dashboard, no human-mediated credential provisioning.
+
+The standard has two parts:
+
+1. **Registration** — A one-time process in which the agent generates an Ed25519 keypair, proves it holds the private key by completing a contextual challenge, and receives a permanent agent identity.
+2. **Per-request signing** — Every subsequent API request is authenticated by a short-lived Ed25519 signature, with no session tokens or cookies.
+
+Any service implementing this standard exposes its specification at `GET /agent-auth`.
+
+---
+
+<Prompt description="Register your agent with Commune autonomously" actions={["copy", "cursor"]}>
+  Register me as a new Commune agent. My agent name is "acme-support", my purpose is to triage inbound customer support emails and route them to the right team. My org is Acme Corp with slug "acme-corp". Generate a keypair, complete the challenge, and store the agent ID and private key.
+</Prompt>
+
+## Registration
+
+Registration is a four-step process. It happens once. After it completes, the agent never needs to register again.
+
+<Steps>
+
+<Step title="Generate an Ed25519 keypair">
+
+
+Generate a 32-byte <Tooltip tip="A fast, secure digital signature algorithm used to prove identity without transmitting a private key">Ed25519</Tooltip> keypair. Store the private key permanently and securely — it is never transmitted, and losing it means the agent identity cannot be recovered.
+
+<CodeGroup>
+
+```python Python
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import base64
+
+private_key = Ed25519PrivateKey.generate()
+public_key  = private_key.public_key()
+
+PRIVATE_KEY_B64 = base64.b64encode(private_key.private_bytes_raw()).decode()
+PUBLIC_KEY_B64  = base64.b64encode(public_key.public_bytes_raw()).decode()
+
+# Store PRIVATE_KEY_B64 in a secret env var. Never transmit it.
+print("Public key:", PUBLIC_KEY_B64)
+```
+
+```typescript TypeScript
+import { generateKeyPairSync } from 'crypto';
+
+const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+
+// Strip the 12-byte SPKI header to get the raw 32 bytes
+const PUBLIC_KEY_B64  = publicKey.export({ type: 'spki', format: 'der' }).slice(12).toString('base64');
+const PRIVATE_KEY_B64 = privateKey.export({ type: 'pkcs8', format: 'der' }).slice(16).toString('base64');
+
+console.log('Public key:', PUBLIC_KEY_B64);
+// Store PRIVATE_KEY_B64 securely. Never transmit it.
+```
+
+```bash cURL (using openssl)
+# Generate raw 32-byte Ed25519 private key
+openssl genpkey -algorithm ed25519 -out private.pem
+openssl pkey -in private.pem -pubout -out public.pem
+
+# Extract base64-encoded raw bytes (strip PEM headers/DER wrapper)
+PRIVATE_KEY_B64=$(openssl pkey -in private.pem -outform DER | tail -c 32 | base64)
+PUBLIC_KEY_B64=$(openssl pkey -in public.pem -pubin -outform DER | tail -c 32 | base64)
+```
+
+</CodeGroup>
+
+<Warning>
+  The private key is never sent to Commune. Only the public key is transmitted. If you lose the private key, the agent identity is unrecoverable — generate a new keypair and re-register.
+</Warning>
+
+</Step>
+
+<Step title="Register">
+
+Send your public key, a description of what your agent does, and organization details.
+
+```http
+POST https://api.commune.email/v1/auth/agent-register
+Content-Type: application/json
+```
+
+```json
+{
+  "agentName":    "acme-support",
+  "agentPurpose": "I triage inbound customer support emails, route escalations to the right team, and draft initial responses for human review.",
+  "orgName":      "Acme Corp",
+  "orgSlug":      "acme-corp",
+  "publicKey":    "<PUBLIC_KEY_B64>"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `agentName` | string | Display name for this agent |
+| `agentPurpose` | string | 20–2000 chars. What the agent does — used to generate your contextual challenge |
+| `orgName` | string | Organization name |
+| `orgSlug` | string | Unique slug, lowercase. Becomes your inbox address: `{slug}@commune.email` |
+| `publicKey` | string | Base64-encoded raw 32-byte Ed25519 public key (44 characters) |
+
+**Response:**
+
+```json
+{
+  "agentSignupToken": "agt_signup_...",
+  "challenge": {
+    "text": "You are registering \"acme-support\" on Commune...\n\nYour stated purpose:\n\"I triage inbound customer support emails...\"\n\nSTEP 1 — PRIMARY VERB\n...\nSTEP 2 — WORD COUNT\n...\nSTEP 3 — EPOCH MARKER\nInclude this exactly: 3f9a1c4d7b2e08fa\n\nRESPONSE FORMAT\n  <primary_verb>:<word_count>:<epoch_marker>",
+    "format": "<primary_verb>:<word_count>:<epoch_marker>"
+  },
+  "expiresIn": 900
+}
+```
+
+</Step>
+
+<Step title="Read and complete the challenge">
+
+
+The `challenge.text` field contains a natural-language paragraph with three tasks. Read it fully before responding — the format and the expected values are embedded in the text.
+
+The three tasks are always:
+
+**STEP 1 — PRIMARY VERB**
+Choose the single lowercase verb that best describes what your agent does. Read your stated `agentPurpose` and identify the core action. Examples: `triage`, `routes`, `monitors`, `handles`, `analyzes`, `generates`, `processes`, `classifies`, `sends`, `summarizes`.
+
+**STEP 2 — WORD COUNT**
+Count the words in your `agentPurpose` that contain 5 or more alphabetical characters. Strip punctuation before measuring each word's length.
+
+For example, for the purpose `"I triage inbound customer support emails, route escalations to the right team"`:
+- Words with 5+ letters: `triage`(6), `inbound`(7), `customer`(8), `support`(7), `emails`(6), `route`(5), `escalations`(11) → **7**
+- Short words excluded: `I`, `to`, `the`, `right`, `team`
+
+**STEP 3 — EPOCH MARKER**
+Copy the 16-character hex string exactly as it appears in the challenge text. It is unique to this registration and expires in 15 minutes.
+
+**Construct your `challengeResponse`:**
+
+```
+triage:7:3f9a1c4d7b2e08fa
+```
+
+The format is always `<verb>:<count>:<epochMarker>` with no spaces.
+
+<Note>
+  You sign the `challengeResponse` string — not the challenge text itself. The challenge text is instructions; the `challengeResponse` is what gets signed.
+</Note>
+
+</Step>
+
+<Step title="Sign and verify">
+
+
+Sign the `challengeResponse` string with your private key, then submit both.
+
+<CodeGroup>
+
+```python Python
+import base64
+
+challenge_response = "triage:7:3f9a1c4d7b2e08fa"
+
+sig_bytes     = private_key.sign(challenge_response.encode())
+signature_b64 = base64.b64encode(sig_bytes).decode()
+```
+
+```typescript TypeScript
+import { sign } from 'crypto';
+
+const challengeResponse = 'triage:7:3f9a1c4d7b2e08fa';
+
+const sig          = sign(null, Buffer.from(challengeResponse), privateKeyObject);
+const signatureB64 = sig.toString('base64');
+```
+
+</CodeGroup>
+
+Submit to `/v1/auth/agent-verify`:
+
+```http
+POST https://api.commune.email/v1/auth/agent-verify
+Content-Type: application/json
+```
+
+```json
+{
+  "agentSignupToken":  "agt_signup_...",
+  "challengeResponse": "triage:7:3f9a1c4d7b2e08fa",
+  "signature":         "<base64 Ed25519 signature of challengeResponse>"
+}
+```
+
+**Response on success:**
+
+```json
+{
+  "agentId":    "agt_4f3a9b2c1d7e...",
+  "orgId":      "org_8a1b3c5d9f...",
+  "inboxEmail": "acme-corp@commune.email"
+}
+```
+
+Store `agentId` alongside your private key. Your inbox is provisioned immediately.
+
+```bash
+export COMMUNE_AGENT_ID="agt_4f3a9b2c1d7e..."
+export COMMUNE_PRIVATE_KEY="<PRIVATE_KEY_B64>"
+```
+
+</Step>
+
+</Steps>
+
+## Per-Request Signing
+
+After registration, every API request is authenticated by signing a message containing your agent ID and the current timestamp. There are no session tokens.
+
+**Message format:**
+
+```
+{agentId}:{unix_timestamp_milliseconds}
+```
+
+**Required headers:**
+
+```
+Authorization: Agent {agentId}:{base64_signature}
+X-Commune-Timestamp: {unix_timestamp_milliseconds}
+```
+
+The timestamp must be within ±60 seconds of the server clock. Each `(agentId, timestamp)` pair is accepted only once — replaying the same signature is rejected.
+
+<CodeGroup>
+
+```python Python
+import time
+import base64
+import requests
+
+AGENT_ID    = "agt_4f3a9b2c1d7e..."
+PRIVATE_KEY = private_key  # Ed25519PrivateKey from cryptography library
+
+def signed_headers() -> dict:
+    ts      = str(int(time.time() * 1000))
+    message = f"{AGENT_ID}:{ts}"
+    sig     = base64.b64encode(PRIVATE_KEY.sign(message.encode())).decode()
+    return {
+        "Authorization":       f"Agent {AGENT_ID}:{sig}",
+        "X-Commune-Timestamp": ts,
+        "Content-Type":        "application/json",
+    }
+
+# Use on every request
+response = requests.get(
+    "https://api.commune.email/v1/agent/org",
+    headers=signed_headers(),
+)
+```
+
+```typescript TypeScript
+import { sign, KeyObject } from 'crypto';
+
+const AGENT_ID = 'agt_4f3a9b2c1d7e...';
+
+function signedHeaders(privateKey: KeyObject): Record<string, string> {
+  const ts      = String(Date.now());
+  const message = `${AGENT_ID}:${ts}`;
+  const sig     = sign(null, Buffer.from(message), privateKey).toString('base64');
+  return {
+    'Authorization':       `Agent ${AGENT_ID}:${sig}`,
+    'X-Commune-Timestamp': ts,
+    'Content-Type':        'application/json',
+  };
+}
+
+// Use on every request
+const res = await fetch('https://api.commune.email/v1/agent/org', {
+  headers: signedHeaders(privateKey),
+});
+```
+
+```bash cURL
+AGENT_ID="agt_4f3a9b2c1d7e..."
+TS=$(date +%s%3N)   # Unix milliseconds
+MESSAGE="${AGENT_ID}:${TS}"
+
+# Sign with openssl (requires private key in PEM format)
+SIG=$(echo -n "$MESSAGE" | openssl pkeyutl -sign -inkey private.pem -rawin | base64)
+
+curl https://api.commune.email/v1/agent/org \
+  -H "Authorization: Agent ${AGENT_ID}:${SIG}" \
+  -H "X-Commune-Timestamp: ${TS}"
+```
+
+</CodeGroup>
+
+---
+
+## Self-Service Management
+
+Authenticated agents can manage their own organization and API keys without a dashboard.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/v1/agent/org` | Get organization details |
+| `PATCH` | `/v1/agent/org` | Update organization name |
+| `GET` | `/v1/agent/api-keys` | List API keys (metadata only, keys not shown) |
+| `POST` | `/v1/agent/api-keys` | Create a `comm_` API key (shown once on creation) |
+| `DELETE` | `/v1/agent/api-keys/:id` | Revoke an API key |
+| `POST` | `/v1/agent/api-keys/:id/rotate` | Rotate a key — old invalidated immediately |
+
+All routes accept either Agent signature auth or Bearer API key auth.
+
+---
+
+## Reference
+
+<AccordionGroup>
+
+<Accordion title="Challenge validation rules">
+
+When you submit a `challengeResponse`, the server validates all three parts independently before checking the signature:
+
+| Part | Rule |
+|------|------|
+| `verb` | Single lowercase alphabetical word, 2–30 characters |
+| `count` | Non-negative integer matching the server's pre-computed 5+-char word count for your `agentPurpose` |
+| `epochMarker` | Verbatim match to the 16-char hex string from the challenge text |
+| `signature` | Valid Ed25519 signature of the full `challengeResponse` string |
+
+If the word count is wrong, the server returns the error `invalid_challenge_response` — not `invalid_signature`. This means the signature was never checked, and you need to recount. The server pre-computes the expected count when you register, so there is a single correct value.
+
+</Accordion>
+
+<Accordion title="Timestamp and replay rules">
+
+- Timestamp must be Unix milliseconds (not seconds)
+- Server tolerance: ±60 seconds from server time
+- Each `(agentId, timestampMs)` pair is a one-time nonce — submitting the same headers twice returns `401`
+- The response header `X-Commune-Server-Time` returns the server's current Unix milliseconds — use it to diagnose clock drift
+
+</Accordion>
+
+<Accordion title="Rate limits">
+
+| Endpoint | Limit |
+|----------|-------|
+| `POST /v1/auth/agent-register` | 5 per IP per day |
+| `POST /v1/auth/agent-verify` | 10 per IP per 15 minutes |
+| All `/v1/*` routes | Standard per-org rate limits apply |
+
+</Accordion>
+
+<Accordion title="Error reference">
+
+| Code | HTTP | Meaning |
+|------|------|---------|
+| `missing_fields` | 400 | Required fields absent from the request body |
+| `invalid_public_key` | 400 | Public key is not a base64-encoded 32-byte Ed25519 key |
+| `invalid_agent_purpose` | 400 | `agentPurpose` is too short, too long, or fewer than 3 words |
+| `invalid_org_slug` | 400 | Slug contains characters outside `[a-zA-Z0-9_-]` |
+| `slug_exists` | 409 | Org slug is already taken — choose a different one |
+| `invalid_token` | 401 | Signup token is invalid, expired, or already used |
+| `invalid_challenge_response` | 400 | Wrong verb format, wrong word count, or wrong epoch marker |
+| `invalid_signature` | 401 | Ed25519 signature does not verify — check you signed `challengeResponse`, not the challenge text |
+| `timestamp_out_of_range` | 401 | Timestamp drift exceeds ±60 seconds — sync your system clock |
+| `missing_timestamp_header` | 400 | `X-Commune-Timestamp` header is absent |
+
+</Accordion>
+
+<Accordion title="Key storage">
+
+Store two values permanently per agent identity:
+
+```bash
+COMMUNE_AGENT_ID="agt_..."        # returned by /v1/auth/agent-verify
+COMMUNE_PRIVATE_KEY="<base64>"   # generated locally in Step 1; never transmitted
+```
+
+Neither value should be committed to source control. Use a secrets manager, environment variable injection, or a `.env` file excluded via `.gitignore`.
+
+There is no key recovery mechanism. If the private key is lost, register a new identity.
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## Background
+
+### The problem with credential provisioning for agents
+
+The standard model for API authentication is a human-issued API key: a human logs into a dashboard, creates a key, copies it, and injects it into the agent's environment. This works when a human is setting up the agent, but it breaks down in several ways:
+
+- Agents that provision sub-agents cannot get keys for them without a human intervention at each step
+- An agent running in a sandboxed environment cannot access a dashboard
+- API keys are long-lived secrets; they leak, get rotated, and expire on schedules humans manage
+- There is no standard — every platform has a different provisioning flow
+
+### What this standard does differently
+
+The Commune Agent Signing Standard decouples identity from credential management. The agent generates its own keypair, proves it controls the private key, and receives an identity. From that point, the agent authenticates every request by signing with the same key — no shared secrets, no sessions, no tokens to manage.
+
+The registration challenge exists to verify that the registrant can read and reason about natural language, not just submit a pre-formed request. A script that sends hardcoded requests to our registration endpoint cannot complete the challenge, because the challenge embeds the required response format inside a prose paragraph, and the correct answer depends on the content of `agentPurpose` — which changes per agent.
+
+### What it enables
+
+- **Autonomous agent setup**: an agent can register itself without any human input if given network access
+- **Sub-agent provisioning**: an orchestrator agent can register sub-agents on their behalf by generating keypairs for them and completing the registration flow
+- **No rotating secrets**: the private key never expires; only explicit revocation ends an agent's access
+- **Auditability**: every request is tied to a specific `agentId`, which maps to a known `agentPurpose` and organization
+
+### Discovery
+
+Any service implementing this standard exposes its spec at `GET /agent-auth`. Agents can be pointed at a base URL and autonomously discover how to register:
+
+```http
+GET https://api.commune.email/agent-auth
+```
+
+Returns the full registration specification in plain text, including endpoint paths, field descriptions, and code examples. An agent with no prior knowledge of Commune can read this response and complete registration without additional documentation.
+
+## What's next?
+
+<Columns cols={2}>
+
+<Card title="Authentication" icon="key" href="/authentication">
+  Standard API key authentication for human-managed integrations.
+</Card>
+
+<Card title="Inboxes" icon="inbox" href="/features/inboxes">
+  Manage the inbox provisioned for your agent at registration.
+</Card>
+
+<Card title="Messages" icon="paper-plane" href="/features/messages">
+  Send emails using the API key your agent creates after registration.
+</Card>
+
+<Card title="Security Overview" icon="shield" href="/security/overview">
+  Full picture of Commune's security architecture.
+</Card>
+
+</Columns>

@@ -1,0 +1,143 @@
+---
+title: "Verify domain"
+api: "POST /v1/domains/:domainId/verify"
+description: "Trigger DNS verification for a domain. Call this after adding the required DNS records."
+---
+
+<RequestExample>
+```typescript TypeScript
+import { CommuneClient } from 'commune-ai';
+
+const commune = new CommuneClient({ apiKey: process.env.COMMUNE_API_KEY });
+
+const result = await commune.domains.verify('domain_xyz789');
+
+console.log(result.data.status);  // verified — or pending if DNS hasn't propagated
+```
+```python Python
+from commune import CommuneClient
+
+client = CommuneClient()
+
+result = client.domains.verify("domain_xyz789")
+
+print(result.data.status)
+```
+```bash MCP
+verify_domain(id="domain_xyz789")
+```
+```bash cURL
+curl -X POST "https://api.commune.email/v1/domains/domain_xyz789/verify" \
+  -H "Authorization: Bearer comm_..."
+```
+```bash CLI
+commune domains verify domain_xyz789
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 Verified
+{
+  "data": {
+    "id": "domain_xyz789",
+    "name": "mycompany.com",
+    "status": "verified",
+    "records": [
+      {
+        "type": "MX",
+        "name": "mycompany.com",
+        "value": "feedback-smtp.us-east-1.amazonses.com",
+        "priority": 10,
+        "ttl": 300,
+        "status": "verified"
+      },
+      {
+        "type": "TXT",
+        "name": "resend._domainkey.mycompany.com",
+        "value": "p=MIGfMA0GCSq...",
+        "ttl": 300,
+        "status": "verified"
+      }
+    ]
+  }
+}
+```
+```json 200 Still Pending
+{
+  "data": {
+    "id": "domain_xyz789",
+    "name": "mycompany.com",
+    "status": "pending",
+    "records": [
+      {
+        "type": "MX",
+        "name": "mycompany.com",
+        "status": "pending"
+      }
+    ]
+  }
+}
+```
+```json 404 Not Found
+{
+  "error": "Domain not found"
+}
+```
+```json 400 Bad Request
+{
+  "error": "Verification failed"
+}
+```
+```json 401 Unauthorized
+{
+  "error": "unauthorized",
+  "message": "Invalid or missing API key"
+}
+```
+</ResponseExample>
+
+## Path Parameters
+
+<ParamField path="domainId" type="string" required>
+  The domain ID to verify. Obtain this from [Create domain](/api-reference/domains/create) or [List domains](/api-reference/domains/list).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  Updated domain object after the verification check.
+
+  <Expandable title="properties" defaultOpen>
+    <ResponseField name="id" type="string">
+      Domain ID.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      The domain name.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Updated verification status. `"verified"` when all required DNS records are present and valid. `"pending"` if DNS has not yet propagated — wait a few minutes and try again.
+    </ResponseField>
+    <ResponseField name="records" type="object[]">
+      Updated DNS records with per-record verification status.
+
+      <Expandable title="Record properties">
+        <ResponseField name="type" type="string">DNS record type.</ResponseField>
+        <ResponseField name="name" type="string">DNS record name/host.</ResponseField>
+        <ResponseField name="value" type="string">Expected DNS record value.</ResponseField>
+        <ResponseField name="priority" type="number">MX priority. Only present for MX records.</ResponseField>
+        <ResponseField name="ttl" type="number">Recommended TTL in seconds.</ResponseField>
+        <ResponseField name="status" type="string">
+          Per-record verification status. One of: `not_started`, `pending`, `verified`, `failed`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Verification flow
+
+1. Call [Create domain](/api-reference/domains/create) — note the DNS records returned.
+2. Add those records to your DNS provider (registrar or Cloudflare, Route53, etc.).
+3. Wait for DNS propagation — typically 5 minutes to 2 hours depending on your registrar's TTL settings.
+4. Call this endpoint to check verification. If `status` is still `"pending"`, wait and retry.
+5. Once `status` is `"verified"`, the domain is ready for sending and receiving.

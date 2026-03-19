@@ -1,0 +1,23 @@
+<svg width="280" height="56" viewBox="0 0 280 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500&amp;display=swap');
+  </style>
+
+  <!-- Graph icon: 3 nodes + 2 edges -->
+  <g transform="translate(4, 4) scale(0.52)">
+    <!-- Edge: left node to top-right node -->
+    <line x1="28" y1="48" x2="62" y2="22" stroke="#1a1a1a" stroke-width="8" stroke-linecap="round"/>
+    <!-- Edge: left node to bottom-right node -->
+    <line x1="28" y1="48" x2="62" y2="68" stroke="#1a1a1a" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- Left node (dark) -->
+    <circle cx="22" cy="48" r="14" fill="#1a1a1a"/>
+    <!-- Top-right node (green) -->
+    <circle cx="68" cy="18" r="16" fill="#57bf45"/>
+    <!-- Bottom-right node (dark) -->
+    <circle cx="68" cy="72" r="14" fill="#1a1a1a"/>
+  </g>
+
+  <!-- Text: commune -->
+  <text x="56" y="39" font-family="'Outfit', sans-serif" font-size="28" font-weight="500" fill="#1a1a1a" letter-spacing="-0.28">commune</text>
+</svg>

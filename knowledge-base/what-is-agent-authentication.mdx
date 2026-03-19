@@ -1,0 +1,84 @@
+---
+title: What is agent authentication and why does it matter?
+description: Ed25519 challenge-response authentication lets AI agents register and authenticate without any human intervention — no browser, no email verification, no dashboard.
+---
+
+## The short answer
+
+Agent authentication is a cryptographic method for AI agents to register themselves and authenticate API requests without any human in the loop. It uses Ed25519 digital signatures — the same primitive as SSH keys.
+
+## The problem it solves
+
+Every API authentication method assumes a human at some point:
+
+| Method | Human required |
+|--------|---------------|
+| API key | Human generates key in dashboard, copies it to agent |
+| OAuth | Human authorizes the OAuth flow |
+| Password | Human creates account, sets password |
+| Email verification | Human clicks verification link |
+
+Autonomous agents can't do any of this. They can't open a browser, navigate a dashboard, or click a link.
+
+## How Commune agent authentication works
+
+**One-time registration** (two API calls):
+
+1. Agent generates an Ed25519 keypair locally
+2. Agent sends public key + purpose description to `/v1/auth/agent-register`
+3. Server returns a natural-language challenge (proves the registrant can reason, not just script)
+4. Agent reads challenge, constructs response, signs it with private key
+5. Agent sends signed response to `/v1/auth/agent-verify`
+6. Server returns `agentId` + auto-provisioned inbox
+
+**Per-request authentication** (zero extra round-trips):
+
+```
+Authorization: Agent {agentId}:{base64_ed25519_signature}
+X-Commune-Timestamp: {unix_milliseconds}
+```
+
+The agent signs `{agentId}:{timestamp}` with its private key before every request. No token exchange. No session. Stateless.
+
+## Why Ed25519
+
+- **Private key never leaves the agent** — only signatures are transmitted
+- **No rotation needed** — unless key is compromised (same as SSH)
+- **Replay-proof** — timestamp is part of the signed message, each pair accepted once
+- **Fast** — microsecond signing and verification
+- **Standard** — RFC 8032, supported in every crypto library
+
+## Compared to API keys
+
+| | API key | Agent auth |
+|--|---------|-----------|
+| Who creates it | Human via dashboard | Agent generates itself |
+| What's transmitted | The key itself (leaked = full access) | Signature only (private key never leaves) |
+| Rotation | Manual | Re-register with new keypair |
+| Autonomous setup | ✗ No | ✅ Yes |
+| Replay attack protection | Depends on implementation | Built-in (timestamp) |
+
+## Quick start
+
+```bash
+# Your agent hits the discovery endpoint to get instructions
+GET https://commune.email/agent-auth
+```
+
+Returns plain markdown with complete registration steps, code examples for Python/Node.js/Go.
+
+Full spec: [Agent Authentication](/agents/agent-auth)
+
+## Related
+
+<Columns cols={2}>
+
+<Card title="Agent Authentication Standard" icon="newspaper" href="/blog/agent-authentication-standard">
+  Complete technical spec with Python, Node.js, and Go implementation examples.
+</Card>
+
+<Card title="Agent Auth" icon="key" href="/agents/agent-auth">
+  API reference for the Ed25519 challenge-response agent authentication flow.
+</Card>
+
+</Columns>
