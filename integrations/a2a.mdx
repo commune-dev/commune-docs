@@ -1,0 +1,156 @@
+---
+title: Agent-to-Agent (A2A)
+description: Any AI agent can discover and use Commune's email capabilities via the A2A protocol. No SDK needed.
+---
+
+Commune implements Google's [Agent-to-Agent (A2A) protocol](https://a2a-protocol.org), so any agent on any framework — LangGraph, CrewAI, OpenAI Agents SDK, Google ADK — can discover Commune and delegate email tasks to it. No SDK installation, no docs reading. Just protocol-level interoperability.
+
+## Discovery
+
+Your agent fetches the Agent Card at the standard well-known URL:
+
+```bash
+curl https://api.commune.email/.well-known/agent-card.json
+```
+
+This returns a JSON manifest listing every skill Commune offers, what inputs they accept, and how to authenticate. The Agent Card is public — no auth needed.
+
+## Skills
+
+| Skill | Description |
+|---|---|
+| `send_email` | Send an email. Supports HTML/text, attachments, CC/BCC, threading via `thread_id` |
+| `read_thread` | Get all messages in a conversation thread |
+| `search_inbox` | Semantic + keyword search across emails |
+| `list_threads` | List recent threads with cursor pagination |
+| `get_delivery_status` | Check delivery metrics — sent, delivered, bounced, failed |
+| `create_inbox` | Provision a new email address |
+| `list_inboxes` | List all available email addresses |
+
+## Authentication
+
+Pass your Commune API key as a Bearer token. The Agent Card declares this as the required auth scheme — A2A clients handle it automatically.
+
+```
+Authorization: Bearer comm_xxx...
+```
+
+## Use
+
+Send a JSON-RPC request to `POST https://api.commune.email/a2a`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "message/send",
+  "id": "1",
+  "params": {
+    "message": {
+      "role": "user",
+      "parts": [{
+        "kind": "data",
+        "data": {
+          "skill": "send_email",
+          "to": "john@example.com",
+          "subject": "Following up",
+          "text": "Hey John, just checking in on the proposal."
+        }
+      }]
+    }
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "result": {
+    "id": "task_abc123",
+    "status": { "state": "completed" },
+    "artifacts": [{
+      "parts": [{
+        "kind": "data",
+        "data": {
+          "skill": "send_email",
+          "id": "msg_def456",
+          "thread_id": "thread_ghi789",
+          "status": "queued"
+        }
+      }]
+    }]
+  }
+}
+```
+
+## Framework Examples
+
+<CodeGroup>
+
+```python LangGraph / LangChain
+from a2a.client import A2AClient
+
+commune = A2AClient("https://api.commune.email/a2a")
+commune.set_auth(bearer="comm_xxx")
+
+result = await commune.send_message({
+    "skill": "send_email",
+    "to": "john@example.com",
+    "subject": "Following up",
+    "text": "Hey John, just checking in."
+})
+```
+
+```python OpenAI Agents SDK
+from agents import Agent, Runner
+from agents.mcp import MCPServerSse
+
+# OpenAI Agents SDK discovers A2A peers automatically
+sales_agent = Agent(
+    name="Sales Agent",
+    instructions="You handle sales outreach via email.",
+    # A2A peer — SDK fetches the Agent Card and exposes skills as tools
+    a2a_peers=["https://api.commune.email"]
+)
+
+result = await Runner.run(sales_agent, "Send a follow-up to john@example.com about the proposal")
+```
+
+```python Google ADK
+from google.adk import Agent
+
+# ADK discovers agents via /.well-known/agent-card.json
+agent = Agent(
+    name="Outreach Agent",
+    peers=["https://api.commune.email"]
+)
+
+# Commune's email skills are available as delegatable tasks
+await agent.delegate("https://api.commune.email/a2a", {
+    "skill": "send_email",
+    "to": "john@example.com",
+    "subject": "Quick question",
+    "text": "Are you free Thursday?"
+})
+```
+
+</CodeGroup>
+
+## Endpoints
+
+| Endpoint | Method | Auth | Purpose |
+|---|---|---|---|
+| `/.well-known/agent-card.json` | GET | None | Agent discovery |
+| `/a2a` | POST | Bearer | JSON-RPC 2.0 transport |
+| `/a2a/v1/message:send` | POST | Bearer | REST transport |
+| `/a2a/v1/tasks/:taskId` | GET | Bearer | Get task status |
+
+## Links
+
+- [Agent Card (live)](https://api.commune.email/.well-known/agent-card.json) — Commune's published capabilities
+- [A2A Protocol Spec](https://a2a-protocol.org/latest/specification/) — full specification
+- [A2A JS SDK](https://github.com/a2aproject/a2a-js) — TypeScript client
+- [A2A Python SDK](https://pypi.org/project/a2a-sdk/) — Python client
+- [A2A Samples](https://github.com/a2aproject/a2a-samples) — reference implementations

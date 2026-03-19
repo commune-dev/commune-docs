@@ -81,6 +81,7 @@
           {
             "group": "Integrations",
             "pages": [
+              "integrations/a2a",
               "integrations/x402-payments",
               "integrations/coding-agents",
               "integrations/openclaw"
