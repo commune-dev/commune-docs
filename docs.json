@@ -68,6 +68,15 @@
             ]
           },
           {
+            "group": "Phone & SMS",
+            "pages": [
+              "phone/quickstart",
+              "phone/phone-numbers",
+              "phone/sms",
+              "features/credits"
+            ]
+          },
+          {
             "group": "Security",
             "pages": [
               "security/overview",
@@ -153,6 +162,38 @@
               "api-reference/domains/list",
               "api-reference/domains/get",
               "api-reference/domains/verify"
+            ]
+          },
+          {
+            "group": "Phone Numbers",
+            "pages": [
+              "api-reference/phone-numbers/search",
+              "api-reference/phone-numbers/purchase",
+              "api-reference/phone-numbers/list",
+              "api-reference/phone-numbers/get",
+              "api-reference/phone-numbers/update",
+              "api-reference/phone-numbers/allow-list",
+              "api-reference/phone-numbers/block-list",
+              "api-reference/phone-numbers/release"
+            ]
+          },
+          {
+            "group": "SMS",
+            "pages": [
+              "api-reference/sms/send",
+              "api-reference/sms/list",
+              "api-reference/sms/conversations",
+              "api-reference/sms/get-conversation",
+              "api-reference/sms/search",
+              "api-reference/sms/suppressions"
+            ]
+          },
+          {
+            "group": "Credits",
+            "pages": [
+              "api-reference/credits/get",
+              "api-reference/credits/bundles",
+              "api-reference/credits/purchase"
             ]
           },
           {
